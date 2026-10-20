@@ -46,5 +46,5 @@ def define_listenner(fonction : function) -> None:
 def agent_color(agent : str) -> None :
     raise NotImplementedError("To Do")
 
-def reduce_text(text : str, max_length : int = 400) :
+def reduce_text(text : str, max_length : int = 400) -> str:
     raise NotImplementedError("To Do")
