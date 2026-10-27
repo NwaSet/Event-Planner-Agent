@@ -226,9 +226,10 @@ def test_invalid_status_contract_cannot_declare_completion(status, questions, of
 
 
 def test_plain_question_does_not_guess_needs_input(offline):
-    script(offline, [("Orchestrator", message("What date?"))])
+    script(offline, [("Orchestrator", message("What date?")), ("Orchestrator", message("What date?"))])
     result = EventOrchestrator().run("Plan an event.")
     assert result.status == "partial" and result.required_information == []
+    assert offline.chat.call_count == 2
 
 
 def test_budget_overrun_is_checked_and_revised_by_llm(offline, monkeypatch):
@@ -497,10 +498,13 @@ def test_failed_or_forged_context_tool_arguments_are_not_replayed(offline):
     assert "unexpected" not in service.get_planning_context(result.conversation_id)
 
 
-def test_submission_must_match_final_response_and_be_last_action(offline):
+def test_accepted_submission_is_authoritative_despite_final_rephrasing(offline):
     script(offline, [finish("Accepted draft.")[0], ("Orchestrator", message("A different unvalidated final answer."))])
-    result = EventOrchestrator().run("Plan.")
-    assert result.status == "partial" and not result.response
+    service = EventOrchestrator()
+    result = service.run("Plan.")
+    assert result.status == "completed" and result.response == "Accepted draft."
+    assert service.conversation_dao.get_messages(result.conversation_id)[-1]["content"] == "Accepted draft."
+    assert offline.chat.call_count == 2
 
 
 def test_submission_must_be_alone_in_tool_batch(offline):
@@ -602,3 +606,141 @@ def test_saving_identical_visible_content_on_distinct_turns_is_not_deduplicated(
     messages = service.conversation_dao.get_messages(second.conversation_id)
     assert [item["content"] for item in messages] == ["Repeat.", "Ready.", "Repeat.", "Ready."]
     assert len({item["id"] for item in messages}) == 4
+
+
+def test_gembloux_clarification_uses_submitted_questions_without_budget_error(offline):
+    questions = ["Quel type d'événement ?", "Quelle date ou période ?"]
+    answer = "Pour les 100 personnes à Gembloux, précisez le type d'événement et la date."
+    script(offline, [
+        context({"requirements": {"attendance": 100, "location": "Gembloux"},
+                 "budget": {"total_budget": 10000, "currency": "EUR"}}),
+        finish(answer, "needs_input", questions)[0],
+        ("Orchestrator", message("Parfait, j'attends vos réponses !")),
+    ])
+    service = EventOrchestrator()
+    result = service.run("Organise un événement pour 100 personnes sur Gembloux, budget 10000 euros.")
+    assert result.status == "needs_input" and result.response == answer
+    assert result.required_information == questions and result.issues == []
+    assert result.persisted and offline.chat.call_count == 3
+    assert service.conversation_dao.get_messages(result.conversation_id)[-1]["content"] == answer
+    observation = json.loads(offline.chat.call_args_list[1].args[0][-1]["content"])
+    assert observation["validation"]["valid"] is True
+    envelope = observation["validation"]["checks"]["budget_envelope"]
+    assert envelope["total_budget"] == "10000.00" and envelope["expense_plan_validated"] is False
+    assert envelope["tax_basis"] is None
+
+
+@pytest.mark.parametrize("amount", [-1, True, "NaN", "not money"])
+def test_budget_ceiling_still_rejects_invalid_amounts(amount, offline):
+    script(offline, [context({"budget": {"total_budget": amount, "currency": "EUR"}}), *finish()])
+    result = EventOrchestrator().run("Record my budget.")
+    assert result.status == "partial" and not result.response
+    assert any("budget ceiling" in issue for issue in result.issues)
+
+
+def test_plain_action_announcement_gets_one_repair_with_real_calls_and_updated_context(offline):
+    service = EventOrchestrator()
+    script(offline, [context({"budget": {"total_budget": 10000, "currency": "EUR"}}), *finish()])
+    first = service.run("My initial budget is 10000 EUR.")
+    start = offline.chat.call_count
+    script(offline, [
+        ("Orchestrator", message("I will change the budget to 100000 EUR and launch the specialists.")),
+        context({"budget": {"total_budget": 100000, "currency": "EUR"}}),
+        *delegate("budget", "Review the updated budget ceiling.", "The ceiling is 100000 EUR; details are pending."),
+        finish("Quel type d'événement et quelle date souhaitez-vous ?", "needs_input", ["Type et date ?"])[0],
+        ("Orchestrator", message("Merci, j'attends vos précisions.")),
+    ])
+    result = service.run("Fais avec 100000.", first.conversation_id)
+    calls = offline.chat.call_args_list[start:]
+    assert result.status == "needs_input" and not result.issues
+    assert result.planning_context["budget"]["total_budget"] == 100000
+    specialist_call = next(entry for entry in calls if entry.kwargs["agent"] == "BudgetAgent")
+    assert json.loads(specialist_call.args[0][-1]["content"])["planning_context"]["budget"]["total_budget"] == 100000
+    assert "Application protocol correction" in calls[1].args[0][-1]["content"]
+    visible = service.conversation_dao.get_messages(result.conversation_id)
+    assert len(visible) == 4
+    assert visible[-2]["content"] == "Fais avec 100000."
+    assert all("Application protocol correction" not in entry["content"] for entry in visible)
+    assert service.supervisor.max_iterations == 20
+    restored = EventOrchestrator()
+    assert restored.get_planning_context(result.conversation_id)["budget"]["total_budget"] == 100000
+
+
+def test_submission_followed_by_context_change_cannot_be_reused(offline):
+    script(offline, [finish("Obsolete answer.")[0], context({"unresolved_constraints": ["New conflict."]}),
+                     ("Orchestrator", message("Everything is ready."))])
+    result = EventOrchestrator().run("Plan.")
+    assert result.status == "partial" and not result.response
+    assert "New conflict." in result.issues
+
+
+def test_later_malformed_submission_cannot_reuse_an_earlier_accepted_result(offline):
+    script(offline, [finish("Old accepted response.")[0],
+                     action("submit_result", {"status": "completed", "response": "Missing questions field."}),
+                     ("Orchestrator", message("Old accepted response."))])
+    result = EventOrchestrator().run("Plan.")
+    assert result.status == "partial" and not result.response
+
+
+def test_protocol_repair_respects_total_iteration_budget(offline):
+    service = EventOrchestrator(max_iterations=3)
+    script(offline, [("Orchestrator", message("I will start.")), context({}), finish()[0]])
+    result = service.run("Plan.")
+    assert result.status == "partial" and not result.response
+    assert "Supervisor iteration limit reached." in result.issues
+    assert offline.chat.call_count == 3 and service.supervisor.max_iterations == 3
+
+
+def test_no_protocol_repair_when_no_iterations_remain(offline):
+    script(offline, [("Orchestrator", message("I will start."))])
+    result = EventOrchestrator(max_iterations=1).run("Plan.")
+    assert result.status == "partial" and offline.chat.call_count == 1
+
+
+def test_protocol_repair_api_failure_is_not_retried_and_preserves_work(offline):
+    service = EventOrchestrator()
+    script(offline, [*delegate("budget"), ("Orchestrator", message("I will finish the plan.")),
+                     ("Orchestrator", llm.LLMError("Unavailable"))])
+    result = service.run("Plan.")
+    assert result.status == "partial" and result.persisted and not result.response
+    assert "BudgetAgent" in result.partial_results
+    assert any("execution failed" in issue for issue in result.issues)
+    assert offline.chat.call_count == 4 and service.supervisor.max_iterations == 20
+
+
+def test_usage_includes_both_original_and_repair_request_without_double_counting(offline):
+    responses = iter([message("I will start."), *(response for _, response in finish())])
+
+    def respond(messages, **kwargs):
+        llm.USAGE_JOURNAL.append({"request_id": kwargs["request_id"], "conversation_id": kwargs["conversation_id"],
+                                 "agent": kwargs["agent"], "prompt_tokens": 10, "completion_tokens": 5,
+                                 "total_tokens": 15, "cost": 0.01})
+        return next(responses)
+
+    offline.chat.side_effect = respond
+    service = EventOrchestrator()
+    result = service.run("Plan.")
+    assert result.status == "completed" and result.request_id is None
+    assert len(result.request_ids) == 2
+    assert result.usage["total"]["calls"] == 3
+    assert result.usage["total"]["total_tokens"] == 45
+    assert result.usage["total"]["known_cost"] == pytest.approx(0.03)
+    assert result.usage == service.usage_summary(result.conversation_id)
+
+
+def test_combined_repair_usage_preserves_unknown_and_partial_accounting(offline):
+    responses = iter([message("I will start."), *(response for _, response in finish())])
+
+    def respond(messages, **kwargs):
+        first = not llm.USAGE_JOURNAL
+        llm.USAGE_JOURNAL.append({"request_id": kwargs["request_id"], "conversation_id": kwargs["conversation_id"],
+                                 "agent": kwargs["agent"], "prompt_tokens": 10 if first else None,
+                                 "completion_tokens": None, "total_tokens": None, "cost": None})
+        return next(responses)
+
+    offline.chat.side_effect = respond
+    service = EventOrchestrator()
+    result = service.run("Plan.")
+    assert result.usage == service.usage_summary(result.conversation_id)
+    assert result.usage["total"]["known_cost"] is None
+    assert result.usage["total"]["missing_prompt_tokens_calls"] == 2

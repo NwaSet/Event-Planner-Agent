@@ -1,0 +1,6 @@
+commande dispo : 
+/back
+/history
+/usage --> donne le nombre de token
+/help
+/exit
