@@ -45,9 +45,9 @@ def test_groups_are_compatible_with_agent_and_function_signatures(group):
 
 def test_roles_receive_only_relevant_tools():
     names = lambda group: {schema["function"]["name"] for _, schema in group()}
-    assert names(registry.get_venue_tools) == {"list_datasets", "get_venues", "get_venue"}
-    assert names(registry.get_provider_tools) == {"list_datasets", "get_providers", "get_provider"}
-    assert names(registry.get_caterer_tools) == {"list_datasets", "get_caterers", "get_caterer"}
+    assert names(registry.get_venue_tools) == {"search_venues", "get_venue"}
+    assert names(registry.get_provider_tools) == {"search_providers", "get_provider"}
+    assert names(registry.get_caterer_tools) == {"search_caterers", "get_caterer"}
     assert names(registry.get_budget_tools) == {"calculate_total", "remaining_budget", "validate_budget"}
     assert names(registry.get_schedule_tools) == {"validate_schedule", "detect_conflicts", "sort_activities"}
 

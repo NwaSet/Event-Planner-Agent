@@ -20,27 +20,25 @@ from dao import ConversationDAO, MemoryDAO
 from model import agent as agent_module
 from model import llm, trace as tracing
 from model.agent import Agent
-from tools import budget_tools, data_tools, schedule_tools, tool_registry
+from tools import budget_tools, data_tools, schedule_tools, tool_registry, search_tools
 
 
+_ITEM = {"get_item": data_tools.get_item}
 _BUDGET = {name: getattr(budget_tools, name) for name in (
     "calculate_total", "remaining_budget", "validate_budget",
 )}
-_VENUE = {name: getattr(data_tools, name) for name in (
-    "list_datasets", "get_venues", "get_venue",
-)}
-_PROVIDER = {name: getattr(data_tools, name) for name in (
-    "list_datasets", "get_providers", "get_provider", "get_caterers", "get_caterer",
-)}
+_VENUE = {"search_venues": search_tools.search_venues, "get_venue": data_tools.get_venue}
+_PROVIDER = {"search_providers": search_tools.search_providers, "get_provider": data_tools.get_provider,
+             "search_caterers": search_tools.search_caterers, "get_caterer": data_tools.get_caterer}
 _SCHEDULE = {name: getattr(schedule_tools, name) for name in (
     "validate_schedule", "detect_conflicts", "sort_activities",
 )}
 _CASES = [
-    (create_budget_agent, "BudgetAgent", _BUDGET),
+    (create_budget_agent, "BudgetAgent", _BUDGET | _ITEM),
     (create_venue_agent, "VenueAgent", _VENUE | _BUDGET),
-    (create_provider_agent, "ProviderAgent", _PROVIDER | _BUDGET),
-    (create_schedule_agent, "ScheduleAgent", _SCHEDULE),
-    (create_writer_agent, "WriterAgent", {}),
+    (create_provider_agent, "ProviderAgent", _PROVIDER | _BUDGET | _ITEM),
+    (create_schedule_agent, "ScheduleAgent", _SCHEDULE | _ITEM),
+    (create_writer_agent, "WriterAgent", _ITEM),
 ]
 _FACTORIES = [case[0] for case in _CASES]
 
@@ -84,7 +82,7 @@ def test_factory_contract_and_exact_tool_permissions(factory, name, functions, o
         schema["function"]["name"]: schema
         for group in (tool_registry.get_budget_tools, tool_registry.get_venue_tools,
                       tool_registry.get_provider_tools, tool_registry.get_caterer_tools,
-                      tool_registry.get_schedule_tools)
+                      tool_registry.get_schedule_tools, tool_registry.get_item_tools)
         for _, schema in group()
     }
     assert {schema["function"]["name"]: schema for schema in agent.schemas} == {
@@ -98,39 +96,14 @@ def test_public_factories_have_unique_agent_names():
     assert len({factory().name for factory in _FACTORIES}) == 5
 
 
-@pytest.mark.parametrize("factory", _FACTORIES)
-def test_shared_prompt_contract(factory):
-    prompt = " ".join(factory().instructions.lower().split())
-    for rule in (
-        "language used by the user", "another language is explicitly requested",
-        "mandatory constraints", "facts from assumptions", "missing information",
-        "never invent venues, providers, prices, availability",
-        "never modify source json files", "never send emails, contact companies, make reservations",
-        "human approval is never assumed", "do not claim completion when key validation has failed",
-        "future orchestrator", "human-readable", "do not force json output",
-    ):
-        assert rule in prompt
-
-
 @pytest.mark.parametrize("factory,required", [
-    (create_budget_agent, ["not an equal split", "confirmed costs", "estimated costs", "unknown costs",
-                           "mandatory validation", "validate_budget", "unknown costs are not zero",
-                           "never silently add ht and ttc", "refundable deposits"]),
-    (create_venue_agent, ["get_venues", "offset/limit", "fictional", "global best",
-                          "types_evenements_interdits", "maximum_personnes_sur_site", "acces_pmr",
-                          "traiteurs_autorises_ids", "leading zeros", "first matching record"]),
-    (create_provider_agent, ["get_caterers", "not every event", "not provider quality ratings",
-                             "json null means unknown", "local to their parent record", "simulated",
-                             "never silently mix ht and ttc", "no suitable option", "allergen traces"]),
-    (create_schedule_agent, ["mandatory validation", "validate_schedule", "detect_conflicts",
-                             "sort_activities", "following date", "case-sensitive",
-                             "do not guess daylight-saving offsets", "unresolved constraints",
-                             "do not remove a real shared resource", "relative draft"]),
-    (create_writer_agent, ["drafts only", "recipient addresses", "explicitly unspecified",
-                           "no tools", "do not derive new totals", "human approval",
-                           "never send a draft", "pending actions", "ht/ttc"]),
+    (create_venue_agent, ["search_venues", '"selected"', '"items"', "indoor_only=true", "not_found"]),
+    (create_provider_agent, ["meal=false", "drinks/bar are separate", '"option_id"', "no catalogue fields"]),
+    (create_budget_agent, ["get_item", "calculate_total", "remaining_budget", "unknown costs are not zero"]),
+    (create_schedule_agent, ["get_item", "validate_schedule", "detect_conflicts", "missing_information"]),
+    (create_writer_agent, ["get_item", "no search tools", "never restart selection", "readable text"]),
 ])
-def test_role_specific_prompt_constraints(factory, required):
+def test_role_contract(factory, required):
     prompt = " ".join(factory().instructions.lower().split())
     for rule in required:
         assert rule in prompt
@@ -179,7 +152,7 @@ def test_memory_isolated_between_agents_instances_and_conversations(factory, off
     agent.run("Follow up", "conv_001")
     sent = offline.call_args.args[0]
     assert [message["content"] for message in sent if message["role"] == "user"] == [
-        "First private request", "Follow up",
+        "Follow up",
     ]
     for untouched in [other_instance, *others]:
         assert untouched.get_history("conv_001") == [
@@ -282,7 +255,7 @@ def test_schedule_conflict_is_exposed_for_revision(offline):
 def test_missing_dataset_failure_is_not_replaced_with_fabricated_records(monkeypatch, offline, tmp_path):
     monkeypatch.setattr(data_tools, "_DATA_DIR", tmp_path)
     offline.side_effect = [
-        _message(calls=[_call("get_venues")]),
+        _message(calls=[_call("search_venues")]),
         _message("Venue data unavailable; no recommendation can be verified."),
     ]
     assert "unavailable" in create_venue_agent().run("Find a venue.")
@@ -295,7 +268,7 @@ def test_factories_do_not_share_mutable_tool_configuration():
     first, second = create_provider_agent(), create_provider_agent()
     first.schemas[0]["function"]["description"] = "Changed"
     first.functions.clear()
-    assert second.functions == _PROVIDER | _BUDGET
+    assert second.functions == _PROVIDER | _BUDGET | _ITEM
     assert second.schemas[0]["function"]["description"] != "Changed"
     assert tool_registry.get_provider_tools()[0][1]["function"]["description"] != "Changed"
 

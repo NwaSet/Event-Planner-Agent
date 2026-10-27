@@ -197,6 +197,9 @@ class TerminalView:
             self.show_error("Saving was incomplete. Review /history before retrying; some messages or memories may already be saved.")
         if result.status == "error":
             self.show_notice("For AI failures, check LLM_API_KEY, LLM_BASE_URL, LLM_MODEL, connectivity, and provider limits. Details may be available in the technical traces.")
+        self.console.print(_text(f"Specialist delegations this interaction: {sum(result.delegations.values())}"))
+        if result.usage:
+            self._render_usage(result.usage, "This interaction")
 
     def _show_help(self) -> None:
         table = Table(title="Conversation commands")
@@ -208,12 +211,20 @@ class TerminalView:
 
     def _show_usage(self, conversation_id: str) -> None:
         usage = self.controller.get_usage(conversation_id)
-        table = Table(title="Recorded conversation usage in this process")
-        for name in ("Agent", "Calls", "Input", "Output", "Known cost (USD)"):
+        self._render_usage(usage, "Recorded conversation usage in this process")
+        self.console.print(
+            "Usage is kept in RAM and resets after restart. These are recorded calls from this process, "
+            "not all historical conversation costs. Unknown or partial values reflect missing provider usage. "
+            "Failed or interrupted requests may incur unreported charges.", style="dim",
+        )
+
+    def _render_usage(self, usage: dict, title: str) -> None:
+        table = Table(title=title)
+        for name in ("Agent", "Calls", "Input", "Output", "Total tokens", "Known cost (USD)"):
             table.add_column(name, justify="left" if name == "Agent" else "right")
         for agent, stats in [*usage["agents"].items(), ("TOTAL", usage["total"])]:
             values = [_text(agent), str(stats["calls"])]
-            for name in ("prompt_tokens", "completion_tokens", "cost"):
+            for name in ("prompt_tokens", "completion_tokens", "total_tokens", "cost"):
                 value = stats["known_cost" if name == "cost" else name]
                 label = "unknown" if value is None else (f"${value:.6f}" if name == "cost" else str(value))
                 if value is not None and stats[f"missing_{name}_calls"]:
@@ -221,8 +232,3 @@ class TerminalView:
                 values.append(label)
             table.add_row(*values, style="bold" if agent == "TOTAL" else None)
         self.console.print(table)
-        self.console.print(
-            "Usage is kept in RAM and resets after restart. These are recorded calls from this process, "
-            "not all historical conversation costs. Unknown or partial values reflect missing provider usage. "
-            "Failed or interrupted requests may incur unreported charges.", style="dim",
-        )

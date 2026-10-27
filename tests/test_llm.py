@@ -152,7 +152,7 @@ def test_chat_parameters_return_message_and_traces(isolated_llm):
     isolated_llm.create.return_value = response
     message = llm.chat(MESSAGES, agent="BudgetAgent", conversation_id="conv-1", temperature=0.1,
                        timeout=12, max_tokens=512)
-    assert message is response.choices[0].message
+    assert message.content == response.choices[0].message.content
     assert message.content == "Bonjour" and message.tool_calls is None
     kwargs = isolated_llm.create.call_args.kwargs
     assert kwargs == {"messages": MESSAGES, "model": "configured/model", "temperature": 0.1,
@@ -168,6 +168,23 @@ def test_chat_parameters_return_message_and_traces(isolated_llm):
     assert entry["duration_seconds"] >= 0
     assert datetime.fromisoformat(entry["timestamp"]).utcoffset() == timedelta(0)
     assert "Organise" not in json.dumps(entry) and "Bonjour" not in json.dumps(entry)
+
+
+@pytest.mark.parametrize("reason", ["stop", "length", "content_filter", "tool_calls"])
+def test_finish_reason_reaches_agent_and_usage_trace(reason, isolated_llm):
+    response = completion(content="Partial or complete answer", usage=NS(prompt_tokens=20, completion_tokens=2048, total_tokens=2068))
+    response.choices[0].finish_reason = reason
+    isolated_llm.create.return_value = response
+    answer = llm.chat(MESSAGES)
+    assert answer.finish_reason == reason
+    assert llm.USAGE_JOURNAL[-1]["finish_reason"] == reason
+    assert llm.USAGE_JOURNAL[-1]["completion_tokens"] == 2048
+
+
+def test_mapping_provider_response_is_supported(isolated_llm):
+    isolated_llm.create.return_value = {"choices": [{"finish_reason": "stop", "message": {"role": "assistant", "content": "Ready"}}],
+                                       "usage": {"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6}}
+    assert llm.chat(MESSAGES) == {"role": "assistant", "content": "Ready", "finish_reason": "stop"}
 
 
 def test_tool_call_not_executed_and_schema_sent(isolated_llm):

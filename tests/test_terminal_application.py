@@ -48,8 +48,7 @@ def tool(name, arguments):
 
 
 def finish(text="Proposal ready.", status="completed", questions=None):
-    return [message(calls=[tool("submit_result", {"status": status, "response": text,
-                                                 "required_information": questions or []})]), message(text)]
+    return [message(text)]
 
 
 def inputs(monkeypatch, values):
@@ -118,18 +117,23 @@ def test_restart_restores_supervisor_and_specialist_memories_through_controller(
     controller = EventController()
     conversation_id = controller.create_conversation()
     delegate = message(calls=[tool("ask_budget_agent", {"request": "Review the budget."})])
-    offline.chat.side_effect = [delegate, message("Budget allowance recorded."), *finish()]
+    offline.chat.side_effect = [delegate, message('{"status":"completed","estimated_total":5000}'), *finish()]
     controller.send_message(conversation_id, "Remember a budget of 5000 EUR.")
     saved_supervisor = controller.orchestrator.supervisor.get_history(conversation_id)
     saved_budget = controller.orchestrator.budget_agent.get_history(conversation_id)
     restored = EventController(EventOrchestrator())
     assert restored.get_conversation(conversation_id)["id"] == conversation_id
     offline.chat.reset_mock()
-    offline.chat.side_effect = [delegate, message("Previous allowance retained."), *finish("Revised proposal.")]
+    offline.chat.side_effect = [delegate, *finish("Revised proposal.")]
     result = restored.send_message(conversation_id, "Can we reduce costs?")
     assert result.status == "completed"
-    assert offline.chat.call_args_list[0].args[0][:-1] == saved_supervisor
-    assert offline.chat.call_args_list[1].args[0][:-1] == saved_budget
+    sent = offline.chat.call_args_list[0].args[0]
+    assert not any(m.get("tool_calls") or m["role"] == "tool" for m in sent)
+    assert "Remember a budget of 5000 EUR." in [m["content"] for m in sent]
+    assert all(entry.kwargs["agent"] == "Orchestrator" for entry in offline.chat.call_args_list)
+    assert restored.orchestrator.budget_agent.get_history(conversation_id) == saved_budget
+    assert restored.orchestrator.supervisor.get_history(conversation_id)[:len(saved_supervisor)] == saved_supervisor
+    assert restored.orchestrator.budget_agent.get_history(conversation_id)[:len(saved_budget)] == saved_budget
 
 
 def test_delete_requires_confirmation_and_retains_other_conversations_and_traces(offline):
@@ -513,33 +517,26 @@ def test_real_orchestrator_api_failures_remain_recoverable_in_terminal(failure, 
     inputs(monkeypatch, ["1", "Event", "First attempt.", "Try again.", "/exit"])
     assert application.main() == 0
     output = offline.output.getvalue()
-    assert "Supervisor execution failed" in output
+    assert "Supervisor could not finish" in output
     assert "LLM_API_KEY" in output and "provider limits" in output
     assert "Recovered." in output
-    assert offline.chat.call_count == 3
+    assert offline.chat.call_count == 2
 
 
-def test_gembloux_questions_and_budget_change_reach_terminal_after_protocol_repair(monkeypatch, offline):
-    first_context = {"requirements": {"attendance": 100, "location": "Gembloux"},
-                     "budget": {"total_budget": 10000, "currency": "EUR"}}
-    updated_context = first_context | {"budget": {"total_budget": 100000, "currency": "EUR"}}
+def test_plain_questions_and_budget_change_need_no_protocol_repair(monkeypatch, offline):
     offline.chat.side_effect = [
-        message(calls=[tool("update_planning_context", {"context": first_context})]),
-        finish("Quel type d'événement et quelle date ?", "needs_input", ["Type et date ?"])[0],
-        message("Parfait, j'attends vos réponses !"),
-        message("Je vais mettre à jour le budget et lancer les spécialistes."),
-        message(calls=[tool("update_planning_context", {"context": updated_context})]),
-        finish("Le budget est de 100000 EUR. Précisez le type et la date.", "needs_input", ["Type et date ?"])[0],
-        message("Merci pour vos précisions."),
+        message(calls=[tool("update_event", {"changes": {"attendance": 100, "city": "Gembloux", "budget": 10000}})]),
+        message("Quelle date souhaitez-vous ?"),
+        message(calls=[tool("update_event", {"changes": {"budget": 100000}})]),
+        message("Le budget est de 100000 EUR. Quelle date souhaitez-vous ?"),
     ]
     inputs(monkeypatch, ["1", "Gembloux", "100 personnes, budget 10000 EUR.", "Fais avec 100000.", "/exit"])
     assert application.main() == 0
     output = offline.output.getvalue()
-    assert output.count("Status: needs_input") == 2
-    assert "Information needed" in output and "Le budget est de 100000 EUR" in output
-    assert "Budget cannot be validated" not in output
-    assert "No validated final response" not in output
+    assert "Le budget est de 100000 EUR" in output
+    assert "protocol correction" not in output
     controller = EventController()
     identifier = controller.list_conversations()[0]["id"]
     assert len(controller.get_history(identifier)) == 4
-    assert controller.orchestrator.get_planning_context(identifier)["budget"]["total_budget"] == 100000
+    assert controller.orchestrator.get_planning_context(identifier)["event"]["budget"] == 100000
+    assert offline.chat.call_count == 4

@@ -167,3 +167,24 @@ def test_empty_and_large_dataset_counts(files):
     contents["venues.json"]["salles"] = records
     assert data.list_datasets()[0]["record_count"] == 123
     assert data.get_venues(0, 50) + data.get_venues(50, 50) + data.get_venues(100, 50) == records
+
+
+def test_generic_item_access_resolves_exact_option_and_shared_terms():
+    from tools.data_tools import get_item
+    venue = get_item("venue", "salle_054")
+    assert venue["id"] == "salle_054"
+    provider = get_item("provider", "002", option_id=6)
+    assert provider["id"] == "002" and provider["option"]["id"] == 6
+    assert "kits" not in provider and "deplacement" in provider
+    catering = get_item("catering", "traiteur_001", option_id="formule_02")
+    assert catering["option"]["id"] == "formule_02" and "formules" not in catering
+    assert "frais_supplementaires" in catering
+
+
+@pytest.mark.parametrize("category,item_id,option", [("artist", "001", None), ("venue", "salle_054", 1),
+                                                  ("provider", "002", "6"), ("provider", "002", True),
+                                                  ("catering", "traiteur_001", "unknown")])
+def test_generic_item_access_rejects_missing_or_mismatched_options(category, item_id, option):
+    from tools.data_tools import get_item
+    with pytest.raises((ValueError, LookupError)):
+        get_item(category, item_id, option)

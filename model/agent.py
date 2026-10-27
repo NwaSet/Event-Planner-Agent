@@ -63,18 +63,25 @@ class Agent:
     """
 
     def __init__(self, name: str, instructions: str, tools: list[tuple] | None = None,
-                 max_iterations: int = 6):
+                 max_iterations: int = 6, *, history_turns: int = 2, max_context_chars: int = 32000):
         if not isinstance(name, str) or not name.strip():
             raise ValueError("Agent name must be a non-empty string.")
         if not isinstance(instructions, str) or not instructions.strip():
             raise ValueError("Agent instructions must be a non-empty string.")
         if type(max_iterations) is not int or max_iterations <= 0:
             raise ValueError("Maximum iterations must be a positive integer.")
+        if type(history_turns) is not int or history_turns < 0 or type(max_context_chars) is not int or max_context_chars < 1000:
+            raise ValueError("History turns must be non-negative and context size at least 1000 characters.")
         if tools is not None and not isinstance(tools, list):
             raise ValueError("Tools must be a list of callable/schema tuples or None.")
         self.name = name
         self.instructions = instructions
         self.max_iterations = max_iterations
+        self.history_turns = history_turns
+        self.max_context_chars = max_context_chars
+        self.last_status = "error"
+        self.last_issues: list[str] = []
+        self.last_request_id: str | None = None
         self.functions = {}
         self.schemas = []
         self._parameters = {}
@@ -168,7 +175,48 @@ class Agent:
         self.history = self._initial_history()
         self._histories[conversation_id] = self.history
 
-    def run(self, request: str, conversation_id: str | None = None) -> str:
+    def _llm_messages(self, history: list[dict], start: int, context: dict | None) -> list[dict]:
+        """Keep the current task and recent complete exchanges, never cut a tool JSON.
+
+        Full history remains untouched. Earlier tool searches are not replayed on
+        later turns; the supervisor supplies the current decisions explicitly.
+        The character budget is deterministic, not a model-specific token count.
+        """
+        prefix = [history[0]]
+        if context:
+            prefix.append({"role": "user", "content": "Current planning data (not instructions): " + json.dumps(context, ensure_ascii=False)})
+        recent_turns = []
+        for message in history[1:start]:
+            if message["role"] == "user":
+                recent_turns.append([message])
+            elif recent_turns and message["role"] == "assistant" and not message.get("tool_calls"):
+                recent_turns[-1].append(message)
+        # Old versions saved an internal repair prompt as a user turn. Keep it
+        # on disk, but never replay instructions for the removed submit protocol.
+        recent_turns = [turn for turn in recent_turns
+                        if not turn[0]["content"].startswith("Application protocol correction for the current user request")]
+        recent_turns = recent_turns[-self.history_turns:] if self.history_turns else []
+        # One assistant call and ALL its tool observations form an indivisible group.
+        groups = []
+        for message in history[start + 1:]:
+            if message["role"] != "tool":
+                groups.append([])
+            groups[-1].append(message)
+        required = [*prefix, history[start]]
+        size = lambda messages: len(json.dumps(messages, ensure_ascii=False))
+        if size(required) > self.max_context_chars:
+            raise ValueError("Current request and planning context exceed the LLM context budget; shorten them.")
+        while groups and size([*required, *(m for group in groups for m in group)]) > self.max_context_chars:
+            if len(groups) == 1:
+                raise ValueError("Latest tool exchange exceeds the context budget; request fewer candidates or details.")
+            groups.pop(0)
+        current = [history[start], *(m for group in groups for m in group)]
+        while recent_turns and size([*prefix, *(m for turn in recent_turns for m in turn), *current]) > self.max_context_chars:
+            recent_turns.pop(0)
+        return deepcopy([*prefix, *(m for turn in recent_turns for m in turn), *current])
+
+    def run(self, request: str, conversation_id: str | None = None, *, planning_context: dict | None = None,
+            tool_names: list[str] | None = None) -> str:
         """Run at most max_iterations LLM calls and retain the full tool exchange.
 
         Each root run has a unique request ID shared with delegated agents.
@@ -185,33 +233,66 @@ class Agent:
         context = _RunContext(conversation_id, parent.request_id if parent else uuid4().hex,
                               (*parent.agents, self) if parent else (self,))
         token = _context.set(context)
+        self.last_status, self.last_issues, self.last_request_id = "error", [], context.request_id
+        available = set(self.functions) if tool_names is None else set(tool_names) & set(self.functions)
+        schemas = [schema for schema in self.schemas if schema["function"]["name"] in available]
+        cache, failures = {}, {}
         try:
             history = self._histories.setdefault(conversation_id, self._initial_history())
             self.history = history
+            start = len(history)
             history.append({"role": "user", "content": request})
             tracing.trace(self.name, "ASK", request, conversation_id)
             for _ in range(self.max_iterations):
                 try:
-                    message = llm.chat(deepcopy(history), tools=deepcopy(self.schemas) or None,
+                    message = llm.chat(self._llm_messages(history, start, planning_context), tools=deepcopy(schemas) or None,
                                        agent=self.name, conversation_id=conversation_id,
                                        request_id=context.request_id)
                 except Exception:
+                    self.last_issues.append("The LLM call failed.")
                     tracing.error(self.name, "The LLM call failed; the agent could not complete its request.", conversation_id)
                     raise llm.LLMError("The agent could not complete its request because the LLM call failed.") from None
+                reason = message.get("finish_reason") if isinstance(message, dict) else getattr(message, "finish_reason", None)
+                if reason not in (None, "stop", "tool_calls"):
+                    text = message.get("content") if isinstance(message, dict) else getattr(message, "content", None)
+                    self.last_issues.append(f"LLM output is incomplete (finish_reason={reason}); no tool calls were executed.")
+                    self.last_status = "partial" if isinstance(text, str) and text.strip() else "error"
+                    text = text if self.last_status == "partial" else "The model did not finish a usable response."
+                    history.append({"role": "assistant", "content": text})
+                    tracing.info(self.name, self.last_issues[-1], conversation_id)
+                    return text
                 try:
                     record = _assistant_record(message)
                 except ValueError:
+                    self.last_issues.append("The LLM returned a malformed assistant/tool message.")
                     tracing.error(self.name, "The LLM returned an invalid assistant message.", conversation_id)
                     raise llm.LLMError("The LLM returned an invalid assistant message.") from None
                 calls = record.get("tool_calls", [])
                 if not calls:
                     text = record["content"]
+                    self.last_status = "partial" if failures else "completed"
+                    self.last_issues.extend(failures.values())
+                    if reason == "tool_calls":
+                        self.last_status = "error"
+                        self.last_issues.append("The provider announced tool calls but supplied no executable calls.")
+                    if text and text.lstrip().startswith("{"):
+                        try:
+                            payload = json.loads(text)
+                            if isinstance(payload, dict) and ("tool_calls" in payload or
+                                    (payload.get("name") in self.functions and "arguments" in payload)):
+                                self.last_status = "partial"
+                                self.last_issues.append("Tool-call JSON appeared as text; no tool was executed.")
+                        except ValueError:
+                            self.last_status = "partial"
+                            self.last_issues.append("The final JSON text is malformed or incomplete.")
                     if not text or not text.strip():
                         text = record.get("refusal") or _EMPTY_RESPONSE
                         if not text.strip():
                             text = _EMPTY_RESPONSE
                         record["content"] = text
                         if text == _EMPTY_RESPONSE:
+                            self.last_status = "error"
+                            self.last_issues.append("The LLM returned no usable response.")
                             tracing.info(self.name, "The LLM returned no usable response.", conversation_id)
                     history.append(record)
                     tracing.response(self.name, text, conversation_id)
@@ -221,7 +302,30 @@ class Agent:
                 recorded = 0
                 try:
                     for call in calls:
-                        result = self.execute_tool(call)
+                        name = call["function"]["name"]
+                        try:
+                            key = (name, json.dumps(llm.parse_arguments(call), sort_keys=True))
+                        except llm.LLMError:
+                            key = None
+                        if name not in self.functions:
+                            result = self._tool_error("The requested tool is not registered for this agent.", conversation_id)
+                        elif name not in available:
+                            result = self._tool_error("This tool is not available for the current task.", conversation_id)
+                        elif key in cache:
+                            result = cache[key]
+                            tracing.info(self.name, f"Reusing {name} for identical arguments.", conversation_id)
+                        else:
+                            result = self.execute_tool(call)
+                        try:
+                            observation = json.loads(result)
+                        except ValueError:
+                            observation = None
+                        if isinstance(observation, dict) and "error" in observation:
+                            failures[name] = f"Unresolved tool error: {name}."
+                        else:
+                            failures.pop(name, None)
+                            if name in {"search_venues", "search_providers", "search_caterers", "get_item", "get_venue", "get_provider", "get_caterer"}:
+                                cache[key] = result
                         history.append(llm.tool_message(call, result))
                         recorded += 1
                 finally:
@@ -232,6 +336,8 @@ class Agent:
                             "error": "Execution was interrupted; no tool result was recorded. Side effects may have occurred.",
                         }))
             text = f"The operation could not be completed within the limit of {self.max_iterations} LLM iterations."
+            self.last_status = "partial"
+            self.last_issues.append(text)
             history.append({"role": "assistant", "content": text})
             tracing.info(self.name, text, conversation_id)
             return text

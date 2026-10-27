@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
-from dao.json_storage import (JSONStorage, parse_timestamp, sanitize_payload,
+from dao.json_storage import (JSONStorage, json_copy, parse_timestamp, sanitize_payload,
                               utc_now, validate_agent_name, validate_identifier)
 
 
@@ -75,6 +75,8 @@ def _validate_conversations(data: dict) -> None:
             raise ValueError("Conversation update time cannot precede creation.")
         if not isinstance(conversation.get("messages"), list) or not isinstance(conversation.get("agent_memories"), dict):
             raise ValueError("Conversation messages and agent memories have invalid structures.")
+        if "event_state" in conversation and not isinstance(conversation["event_state"], dict):
+            raise ValueError("Event state must be an object.")
         for message in conversation["messages"]:
             if not isinstance(message, dict):
                 raise ValueError("Visible messages must be dictionaries.")
@@ -147,6 +149,20 @@ class ConversationDAO:
     def get_conversation(self, conversation_id: str) -> dict | None:
         validate_identifier(conversation_id, "Conversation ID")
         return self._storage.read()["conversations"].get(conversation_id)
+
+    def save_event_state(self, conversation_id: str, state: dict) -> None:
+        """Persist the central event dictionary without changing agent histories."""
+        validate_identifier(conversation_id, "Conversation ID")
+        if not isinstance(state, dict):
+            raise ValueError("Event state must be an object.")
+        snapshot = sanitize_payload(json_copy(state))
+
+        def save(data):
+            conversation = _require(data, conversation_id)
+            conversation["event_state"] = snapshot
+            _touch(conversation)
+
+        self._storage.update(save)
 
     def add_message(self, conversation_id: str, role: str, content: str,
                     agent: str | None = None, *, message_id: str | None = None) -> dict:

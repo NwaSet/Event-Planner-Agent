@@ -18,6 +18,95 @@ from model import trace as tracing
 REAL_CHAT = llm.chat
 
 
+def test_truncated_tool_call_is_not_executed_even_when_arguments_look_valid(isolated_agent):
+    function = Mock(return_value={"ok": True})
+    agent = Agent("Search", "Search", [(function, schema())])
+    isolated_agent.chat.return_value = message(None, [tool_call()], finish_reason="length")
+    agent.run("Search Namur")
+    function.assert_not_called()
+    assert agent.last_status == "error" and "length" in agent.last_issues[0]
+    Agent("Validate", "Validate").load_history(agent.get_history())
+
+
+def test_scope_blocks_catering_even_if_model_requests_it(isolated_agent):
+    function = Mock(return_value={"items": []})
+    tool = llm.tool_schema("search_caterers", "Search catering", {})
+    agent = Agent("Provider", "Technical only", [(function, tool)])
+    isolated_agent.chat.side_effect = [message(None, [tool_call("search_caterers", "{}")]), message("No meal search performed.")]
+    agent.run("Sound only", tool_names=[])
+    function.assert_not_called()
+    assert agent.last_status == "partial"
+    assert isolated_agent.chat.call_args_list[0].kwargs["tools"] is None
+
+
+def test_repeated_search_is_cached_despite_json_spacing(isolated_agent):
+    function = Mock(return_value={"items": []})
+    agent = Agent("Venue", "Search", [(function, schema())])
+    isolated_agent.chat.side_effect = [message(None, [tool_call(arguments='{"city": "Namur"}')]),
+                                      message(None, [tool_call(arguments='{"city":"Namur"}')]), message("No matches")]
+    agent.run("Search")
+    function.assert_called_once_with(city="Namur")
+    assert len([m for m in agent.get_history() if m["role"] == "tool"]) == 2
+
+
+def test_obsolete_protocol_repair_is_kept_in_memory_but_not_sent(isolated_agent):
+    agent = Agent("Orchestrator", "Finish with normal text.")
+    agent.load_history([{"role": "user", "content": "Plan a party."},
+                        {"role": "assistant", "content": "What date?"},
+                        {"role": "user", "content": "Application protocol correction for the current user request above. Call submit_result."},
+                        {"role": "assistant", "content": "Old protocol answer."}])
+    agent.run("Summarize.")
+    assert "submit_result" not in json.dumps(isolated_agent.chat.call_args.args[0])
+    assert "submit_result" in json.dumps(agent.get_history())
+
+
+def test_old_tool_research_is_saved_but_not_replayed(isolated_agent):
+    agent = Agent("Research", "Use tools.", [(lambda city: {"research": city * 800}, schema())], history_turns=2)
+    for index in range(5):
+        isolated_agent.chat.side_effect = [message(None, [tool_call(arguments=json.dumps({"city": str(index)}))]), message(f"Selection {index}")]
+        agent.run(f"Task {index}", "conv_memory")
+    saved = agent.get_history("conv_memory")
+    isolated_agent.chat.side_effect = [message("Done")]
+    agent.run("Current request", "conv_memory", planning_context={"decision": "Keep source ID salle_054"})
+    sent = isolated_agent.chat.call_args.args[0]
+    assert not any(m["role"] == "tool" or m.get("tool_calls") for m in sent)
+    assert "Task 0" not in json.dumps(sent) and "Task 3" in json.dumps(sent)
+    assert "salle_054" in json.dumps(sent)
+    assert agent.get_history("conv_memory")[:len(saved)] == saved
+    assert len(json.dumps(sent)) < len(json.dumps(saved)) / 3
+
+
+def test_context_budget_removes_whole_tool_groups(isolated_agent):
+    agent = Agent("Research", "Use tools.", [(lambda city: {"value": city * 1100}, schema())], max_context_chars=2000)
+    isolated_agent.chat.side_effect = [message(None, [tool_call(arguments='{"city":"a"}', identifier="a")]),
+                                      message(None, [tool_call(arguments='{"city":"b"}', identifier="b")]), message("Done")]
+    agent.run("Compare")
+    sent = isolated_agent.chat.call_args.args[0]
+    assert len(json.dumps(sent, ensure_ascii=False)) <= 2000
+    assert [m["tool_call_id"] for m in sent if m["role"] == "tool"] == ["b"]
+    assert json.loads(sent[-1]["content"])["value"] == "b" * 1100
+    # The reduced context itself must still be a valid tool conversation.
+    Agent("Check", "Check").load_history(sent)
+    assert len([m for m in agent.get_history() if m["role"] == "tool"]) == 2
+
+
+def test_one_oversized_tool_group_stops_before_resending_it(isolated_agent):
+    agent = Agent("Research", "Use tools.", [(lambda city: {"value": city * 3000}, schema())], max_context_chars=2000)
+    isolated_agent.chat.side_effect = [message(None, [tool_call()])]
+    with pytest.raises(llm.LLMError):
+        agent.run("Compare")
+    assert isolated_agent.chat.call_count == 1
+    Agent("Check", "Check").load_history(agent.get_history())
+
+
+def test_specialist_task_can_omit_all_old_turns_without_erasing_memory(isolated_agent):
+    agent = Agent("Specialist", "Use the supplied plan.", history_turns=0)
+    agent.run("Earlier task")
+    agent.run("Current task")
+    assert len(isolated_agent.chat.call_args.args[0]) == 2
+    assert len(agent.get_history()) == 5
+
+
 def tool_call(name="search_venues", arguments='{"city":"Namur"}', identifier="call-1"):
     return {"id": identifier, "type": "function", "function": {"name": name, "arguments": arguments}}
 
@@ -295,7 +384,7 @@ def test_iteration_limit_counts_llm_calls_and_resolves_all_tools(isolated_agent)
     ]
     result = agent.run("Keep searching")
     assert "could not be completed" in result and "2 LLM iterations" in result
-    assert isolated_agent.chat.call_count == 2 and function.call_count == 4
+    assert isolated_agent.chat.call_count == 2 and function.call_count == 1
     assert [item["tool_call_id"] for item in agent.history if item["role"] == "tool"] == ["a", "b", "c", "d"]
     restored = Agent("B", "Other instructions.")
     restored.load_history(agent.get_history())

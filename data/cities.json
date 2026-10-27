@@ -1,0 +1,469 @@
+{
+  "meta": {
+    "source": "GeoNames Belgian postal codes",
+    "url": "https://download.geonames.org/export/zip/BE.zip",
+    "documentation": "https://download.geonames.org/export/zip/readme.txt",
+    "license": "CC BY 4.0",
+    "attribution": "GeoNames — https://www.geonames.org/",
+    "retrieved_on": "2026-10-27",
+    "note": "Selected locality coordinates copied from the source, not supplier addresses. Approximate straight-line distances only. Postal codes disambiguate Aalst and Halle. Andrimont is omitted pending verification of the source location; no centroid is assumed for merged Nazareth-De Pinte.",
+    "source_text_sha256": "599aac58a84073beac33a7221c60fd2d409b7f8166f86409dfe5b8eff7151937"
+  },
+  "cities": [
+    {
+      "name": "Aalst",
+      "postal_code": "9300",
+      "latitude": 50.936,
+      "longitude": 4.0355,
+      "aliases": [
+        "Alost"
+      ],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Anderlecht",
+      "postal_code": "1070",
+      "latitude": 50.8362,
+      "longitude": 4.3145,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Antwerpen",
+      "postal_code": "2000",
+      "latitude": 51.2199,
+      "longitude": 4.4035,
+      "aliases": [
+        "Anvers"
+      ],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Arlon",
+      "postal_code": "6700",
+      "latitude": 49.6833,
+      "longitude": 5.8167,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Brugge",
+      "postal_code": "8000",
+      "latitude": 51.2089,
+      "longitude": 3.2242,
+      "aliases": [
+        "Bruges"
+      ],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Bruxelles",
+      "postal_code": "1000",
+      "latitude": 50.8504,
+      "longitude": 4.3488,
+      "aliases": [
+        "Brussel",
+        "Brussels"
+      ],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Kortrijk",
+      "postal_code": "8500",
+      "latitude": 50.828,
+      "longitude": 3.2649,
+      "aliases": [
+        "Courtrai"
+      ],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Dinant",
+      "postal_code": "5500",
+      "latitude": 50.2581,
+      "longitude": 4.9117,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Gent",
+      "postal_code": "9000",
+      "latitude": 51.05,
+      "longitude": 3.7167,
+      "aliases": [
+        "Gand"
+      ],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Genk",
+      "postal_code": "3600",
+      "latitude": 50.965,
+      "longitude": 5.5008,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Halle",
+      "postal_code": "1500",
+      "latitude": 50.7338,
+      "longitude": 4.2345,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Hasselt",
+      "postal_code": "3500",
+      "latitude": 50.9311,
+      "longitude": 5.3378,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Liège",
+      "postal_code": "4000",
+      "latitude": 50.6337,
+      "longitude": 5.5675,
+      "aliases": [
+        "Luik"
+      ],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Leuven",
+      "postal_code": "3000",
+      "latitude": 50.8796,
+      "longitude": 4.7009,
+      "aliases": [
+        "Louvain"
+      ],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Mechelen",
+      "postal_code": "2800",
+      "latitude": 51.0257,
+      "longitude": 4.4776,
+      "aliases": [
+        "Malines"
+      ],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Marche-En-Famenne",
+      "postal_code": "6900",
+      "latitude": 50.2268,
+      "longitude": 5.3442,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Mons",
+      "postal_code": "7000",
+      "latitude": 50.4541,
+      "longitude": 3.9523,
+      "aliases": [
+        "Bergen"
+      ],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Namur",
+      "postal_code": "5000",
+      "latitude": 50.4669,
+      "longitude": 4.8675,
+      "aliases": [
+        "Namen"
+      ],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Nivelles",
+      "postal_code": "1400",
+      "latitude": 50.5983,
+      "longitude": 4.3285,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Tournai",
+      "postal_code": "7500",
+      "latitude": 50.6071,
+      "longitude": 3.3893,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Verviers",
+      "postal_code": "4800",
+      "latitude": 50.5891,
+      "longitude": 5.8624,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Wavre",
+      "postal_code": "1300",
+      "latitude": 50.7172,
+      "longitude": 4.6014,
+      "aliases": [
+        "Waver"
+      ],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Erembodegem",
+      "postal_code": "9320",
+      "latitude": 50.919,
+      "longitude": 4.0504,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Aartselaar",
+      "postal_code": "2630",
+      "latitude": 51.1341,
+      "longitude": 4.3868,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Alleur",
+      "postal_code": "4432",
+      "latitude": 50.6747,
+      "longitude": 5.5132,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "As",
+      "postal_code": "3665",
+      "latitude": 51.0075,
+      "longitude": 5.5845,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Braine-L'Alleud",
+      "postal_code": "1420",
+      "latitude": 50.6836,
+      "longitude": 4.3678,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Broechem",
+      "postal_code": "2520",
+      "latitude": 51.1813,
+      "longitude": 4.6018,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Fernelmont",
+      "postal_code": "5380",
+      "latitude": 50.5534,
+      "longitude": 4.9861,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Gembloux",
+      "postal_code": "5030",
+      "latitude": 50.5615,
+      "longitude": 4.6989,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Wasseiges",
+      "postal_code": "4219",
+      "latitude": 50.6219,
+      "longitude": 5.0053,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Gooik",
+      "postal_code": "1755",
+      "latitude": 50.7944,
+      "longitude": 4.1138,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Haccourt",
+      "postal_code": "4684",
+      "latitude": 50.7309,
+      "longitude": 5.6696,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Hever",
+      "postal_code": "3191",
+      "latitude": 50.9954,
+      "longitude": 4.5513,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Huissignies",
+      "postal_code": "7950",
+      "latitude": 50.5658,
+      "longitude": 3.7556,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Kain",
+      "postal_code": "7540",
+      "latitude": 50.6387,
+      "longitude": 3.3969,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Lier",
+      "postal_code": "2500",
+      "latitude": 51.1313,
+      "longitude": 4.5704,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Louveigné",
+      "postal_code": "4141",
+      "latitude": 50.532,
+      "longitude": 5.7084,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Meerhout",
+      "postal_code": "2450",
+      "latitude": 51.1321,
+      "longitude": 5.0784,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Meulebeke",
+      "postal_code": "8760",
+      "latitude": 50.9514,
+      "longitude": 3.288,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Molenbeek-Saint-Jean",
+      "postal_code": "1080",
+      "latitude": 50.8499,
+      "longitude": 4.3125,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Nazareth",
+      "postal_code": "9810",
+      "latitude": 51.0,
+      "longitude": 3.65,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "De Pinte",
+      "postal_code": "9840",
+      "latitude": 50.9934,
+      "longitude": 3.6475,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Vilvoorde",
+      "postal_code": "1800",
+      "latitude": 50.9281,
+      "longitude": 4.4294,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Zonhoven",
+      "postal_code": "3520",
+      "latitude": 50.9906,
+      "longitude": 5.3682,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Opwijk",
+      "postal_code": "1745",
+      "latitude": 50.9672,
+      "longitude": 4.1844,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Rijmenam",
+      "postal_code": "2820",
+      "latitude": 51.0016,
+      "longitude": 4.584,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Ruiselede",
+      "postal_code": "8755",
+      "latitude": 51.0404,
+      "longitude": 3.3942,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Seraing",
+      "postal_code": "4100",
+      "latitude": 50.5836,
+      "longitude": 5.5011,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Tildonk",
+      "postal_code": "3150",
+      "latitude": 50.9438,
+      "longitude": 4.6448,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Veurne",
+      "postal_code": "8630",
+      "latitude": 51.0732,
+      "longitude": 2.668,
+      "aliases": [
+        "Furnes"
+      ],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Wauthier-Braine",
+      "postal_code": "1440",
+      "latitude": 50.6818,
+      "longitude": 4.2985,
+      "aliases": [],
+      "source_accuracy": 4
+    },
+    {
+      "name": "Zomergem",
+      "postal_code": "9930",
+      "latitude": 51.1199,
+      "longitude": 3.565,
+      "aliases": [],
+      "source_accuracy": 4
+    }
+  ],
+  "unresolved": [
+    "Andrimont",
+    "Nazareth-De Pinte"
+  ]
+}

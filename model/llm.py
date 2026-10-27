@@ -250,6 +250,7 @@ def _record_usage(call: _Call, response, usage) -> dict:
         "provider_response_id": _safe_label(_get(response, "id")),
         "duration_seconds": time.perf_counter() - call.started,
         "attempts": call.attempts,
+        "finish_reason": _get((_get(response, "choices") or [{}])[0], "finish_reason", _get(response, "finish_reason")),
     }
     for name in _TOKEN_FIELDS:
         value = _get(usage, name)
@@ -296,7 +297,10 @@ def chat(
         choices = _get(result, "choices")
         if not choices or _get(choices[0], "message") is None:
             raise LLMError("The LLM response contains no assistant message.")
-        return choices[0].message
+        message = _get(choices[0], "message")
+        reason = _get(choices[0], "finish_reason")
+        return (dict(message, finish_reason=reason) if isinstance(message, Mapping)
+                else message.model_copy(update={"finish_reason": reason}))
     except Exception as exc:
         failure = _api_error(exc)
         call.emit("ERROR", str(failure))
@@ -390,8 +394,9 @@ def stream_chat(
         message = ChatCompletionMessage(
             role="assistant", content="".join(content) if content else None,
             refusal="".join(refusal) if refusal else None, tool_calls=ordered_tools or None,
+            finish_reason=finish_reason,
         )
-        response = {"id": provider_id, "model": provider_model,
+        response = {"id": provider_id, "model": provider_model, "finish_reason": finish_reason,
                     "_request_id": _get(_get(stream, "response"), "headers", {}).get("x-request-id")}
         entry = _record_usage(call, response, usage)
         completed = True
@@ -513,7 +518,8 @@ def _aggregate(entries: list[dict]) -> dict:
     return summary
 
 
-def usage_summary(conversation_id: str | None = None, *, request_id: str | None = None) -> dict:
+def usage_summary(conversation_id: str | None = None, *, request_id: str | None = None,
+                  request_ids: list[str] | None = None) -> dict:
     """Aggregate completed calls, optionally filtering by conversation and/or request.
 
     None means no filter. Token fields and known_cost sum reported values only;
@@ -522,7 +528,8 @@ def usage_summary(conversation_id: str | None = None, *, request_id: str | None 
     """
     entries = [entry for entry in tuple(USAGE_JOURNAL)
                if (conversation_id is None or entry["conversation_id"] == conversation_id)
-               and (request_id is None or entry["request_id"] == request_id)]
+               and (request_id is None or entry["request_id"] == request_id)
+               and (request_ids is None or entry["request_id"] in request_ids)]
     agents = {}
     for entry in entries:
         agents.setdefault(entry["agent"], []).append(entry)

@@ -1,511 +1,253 @@
-
 # Event-Planner-Agent
 
+Academic Python event planner with one LLM supervisor and five LLM specialists.
+Python searches local catalogues and validates calculations; agents interpret
+requirements, compare trade-offs and select proposals. No bookings or emails are sent.
 
-## Table of Contents
+## Install and run
 
-- [Description](#description)
-- [1. Installation](#1-installation)
-  - [A) Clone the project](#a-clone-the-project)
-  - [B) Create the virtual environment](#b-create-the-virtual-environment)
-  - [C) Activate the virtual environment](#c-activate-the-virtual-environment)
-  - [D) Install requirements](#d-install-requirements)
-  - [E) Create the .env file](#e-create-the-env-file)
-- [2. Run the Application](#2-run-the-application)
-  - [Example request](#example-request)
-  - [Expected output](#expected-output)
-- [3. Project Architecture](#3-project-architecture)
-- [4. Multi-Agent System](#4-multi-agent-system)
-  - [A) Event Orchestrator](#a-event-orchestrator)
-  - [B) Specialized AI Agents](#b-specialized-ai-agents)
-  - [C) Multi-Agent Workflow](#c-multi-agent-workflow)
-- [5. Agent Tools](#5-agent-tools)
-- [6. Data Management](#6-data-management)
-  - [providers.json](#providersjson)
-- [7. Memory and Database](#7-memory-and-database)
-- [8. Streaming and User Interface](#8-streaming-and-user-interface)
-  - [Expected communication flow](#expected-communication-flow)
-- [9. Logging and Tracing](#9-logging-and-tracing)
-  - [Purpose](#purpose)
-- [10. Human Validation](#10-human-validation)
-- [11. Technologies](#11-technologies)
-- [12. Project Limitations](#12-project-limitations)
-- [13. Project Status](#13-project-status)
-- [14. Authors](#14-authors)
-- [14. License](#15-license)
-
----
-
-
-## Description
-
-**Event-Planner-Agent** is a multi-agent AI system designed to help users plan and organize events in Wallonia, Belgium.
-
-The goal of this project is to simplify event planning by coordinating several specialized AI agents through a central orchestrator.
-
-Users only need to describe the event they want to organize and specify their requirements, such as:
-
-- Event type (birthday, corporate event, festival, etc.)
-- Location
-- Date and duration
-- Number of participants
-- Maximum budget
-- Specific requirements or preferences
-
-The system analyzes the request, searches for suitable venues and service providers, manages the budget, creates a schedule, and generates a final event report with email drafts ready to be sent to the selected providers.
-
-The system uses fictional event-provider data for demonstration purposes and public weather information.
-
-> **Note:** This project is an academic prototype. It does not automatically book venues or contact service providers.
-
----
-
-## 1. Installation
-
-### A) Clone the project
-
-```bash
-git clone https://github.com/NwaSet/Event-Planner-Agent.git
-cd Event-Planner-Agent
-```
-
-### B) Create the virtual environment
-
-**Windows:**
-```bash
-python -m venv .venv
-```
-
-**Linux:**
-```bash
-python3 -m venv .venv
-```
-
-### C) Activate the virtual environment
-
-**Windows (CMD):**
-```bat
-.venv\Scripts\activate.bat
-```
-
-**Windows (PowerShell):**
 ```powershell
+python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-```
-
-**Linux:**
-```bash
-source .venv/bin/activate
-```
-
-### D) Install requirements
-
-```bash
 pip install -r requirements.txt
-```
-
-### E) Create the .env file
-
-Copy the environment configuration template.
-
-**Windows (CMD):**
-```bat
-copy .env.example .env
-```
-
-**Linux / PowerShell:**
-```bash
-cp .env.example .env
-```
-
-Open `.env` and configure your LLM provider:
-
-```env
-LLM_BASE_URL=https://api.groq.com/openai/v1
-LLM_API_KEY=your-api-key-here
-LLM_MODEL=qwen/qwen3.8-27b
-```
-
-Make sure that the selected model is available from your LLM provider.
-
-**Important:** Never commit your `.env` file or API keys to GitHub.
-
----
-
-## 2. Run the Application
-
-After activating the virtual environment and installing all dependencies, start the application:
-
-```bash
+Copy-Item .env.example .env
 python main.py
 ```
 
-The application is intended to accept a natural-language event request and coordinate the appropriate AI agents.
+Configure `LLM_BASE_URL`, `LLM_API_KEY` and `LLM_MODEL` in `.env` for your provider.
+Never commit credentials. The terminal supports creating, opening, renaming,
+archiving and deleting conversations. Chat commands: `/back`, `/history`,
+`/usage`, `/help`, `/exit`.
 
-### Example request
+Example: `Organise une conférence à Namur, dans un rayon de 30 km, pour 200
+personnes. Budget total : 10000 EUR. Cherche une salle à moins de 2000 EUR TTC.`
+Add the date, requested configuration and service needs when known. Missing
+information produces clarification questions; a proposal is not a reservation.
 
-```text
-Organize an electronic music event in Namur for
-200 participants with a maximum budget of €5,000.
+## Files and execution
 
-The event should take place on a Saturday evening,
-from 8 PM to 3 AM.
+| Module | Responsibility |
+| --- | --- |
+| `main.py` | Initialize persistence, tracing and the terminal |
+| `view/view.py` | Rich menus, conversation, results and usage tables |
+| `controller/event_controller.py` | Conversation operations and service calls |
+| `services/event_orchestrator.py` | Central event state, automatic ID storage, delegation reuse and saving the turn |
+| `agents/*_agent.py` | Five short specialist prompts and their own tool sets |
+| `model/agent.py` | One shared, bounded LLM/tool loop and conversation histories |
+| `model/llm.py` | Existing API adapter, network errors and token accounting |
+| `model/trace.py` | Technical events and credential redaction |
+| `tools/search_tools.py` | Offline geographic and catalogue filtering |
+| `tools/data_tools.py` | Catalogue loading and individual records; legacy pagination remains a Python API only |
+| `tools/budget_tools.py`, `tools/schedule_tools.py` | Monetary and scheduling checks used by the responsible specialists |
+| `tools/tool_registry.py` | Role-specific tool schemas |
+| `dao/` | Atomic JSON storage, visible conversations, agent memories and traces |
 
-Find a suitable venue, select service providers,
-prepare a budget, and create an event schedule.
+The terminal calls the controller, which calls the supervisor. The supervisor
+coordinates five genuine LLM specialists without rechecking their business decisions.
+BudgetAgent computes costs, VenueAgent selects venues, ProviderAgent selects technical
+kits or catering, ScheduleAgent organizes the timeline and WriterAgent writes summaries.
+All six use the same bounded `Agent` loop, with separate prompts, tools and histories.
+
+Search specialists return a common compact contract:
+
+```json
+{"status": "selected", "items": [{"id": "002", "option_id": 6}]}
 ```
 
-### Expected output
+`option_id` is optional for venues; it selects a kit/formula for suppliers. Other
+statuses are `not_found` and `error`. Ordered alternatives put the preferred option
+first. No names, addresses, prices or descriptions are copied into the selection.
+Python checks only the format and existence of references, then immediately saves
+them. Capacity, suitability and budget decisions belong to the relevant specialist.
+Budget and schedule return their own calculated JSON objects; WriterAgent returns
+readable text. The supervisor finishes with ordinary text: no `submit_result`,
+manual recopying of decisions or extra protocol-repair LLM call.
 
-The system aims to generate:
+`get_item(category, item_id, option_id=None)` reuses existing catalogue readers.
+Budget, schedule and writing agents can resolve only the details they need. Selecting
+an option omits other kits/formulas but retains shared terms such as travel fees.
+These agents have no catalogue search tools. `meal=false` prevents catering delegation;
+technical tasks do not expose catering search tools. Drinks, bar and artists are
+separate categories with no current catalogue, and must not be replaced by meals.
 
-- A proposed venue and suitable service providers
-- A detailed event budget
-- An event schedule
-- A summary of the selected options
-- Email drafts for contacting service providers
-- A final event planning report
+## Local search
 
-The user must validate the proposed event plan before the email drafts are finalized.
+```python
+from tools.search_tools import search_venues, search_caterers, search_providers
 
----
-
-## 3. Project Architecture
-
-```text
-Event-Planner-Agent/
-│
-├── .venv/                 
-│
-├── controller/
-│   └── event_controller.py       
-│
-├── dao/                        
-│
-├── data/
-│   ├── providers.json           
-│   └── venues.json                
-│
-├── logs/
-│   └── logs.json              
-│
-├── model/
-│   ├── __init__.py
-│   ├── agent.py                  
-│   ├── llm.py                  
-│   └── trace.py                
-│
-├── services/
-│   └── event_orchestrator.py     
-│
-├── tools/                       
-│
-├── view/
-│   └── view.py               
-│
-├── .env.example             
-├── .gitignore                 
-├── LICENSE                  
-├── main.py                  
-├── README.md                 
-└── requirements.txt            
+venues = search_venues(city="Namur", radius_km=30, min_capacity=200,
+                       max_price=2000, configuration="seated", limit=15)
+caterers = search_caterers(city="Gembloux", radius_km=30, attendance=100,
+                           max_price_per_person=70, full_meal=True,
+                           dietary=["vegetarien"])
+providers = search_providers(city="Gembloux", radius_km=30,
+                             max_kit_price=2000, services=["son", "light"])
 ```
 
----
+Each search reads the local JSON, applies objective filters to all records, sorts
+by distance then price and source ID, and returns at most 20 compact candidates
+(default 15). Without a city, sorting uses price then ID. With a city and no radius,
+the default is explicitly returned as 30 km. Results include the total match count,
+actual radius, missing coordinates, price basis and limitations. No automatic
+radius expansion occurs; an empty result can suggest a larger radius for discussion.
 
-## 4. Multi-Agent System
+Venue capacity uses one indoor/outdoor and seated/standing configuration, capped
+by the site's maximum. Price is the selected day/evening rental plus mandatory
+cleaning, TTC; deposits are separate. Catering filters individual formulas by
+attendance, service, full meal and dietary flags. Its ceiling is per person TTC,
+excluding extras. Technical suppliers use an HT kit ceiling and son/light/video
+presence, without assuming a guest capacity. Equipment levels are not quality
+ratings. Unknown mandatory values are not assumed to satisfy a filter.
 
-The application is based on a **multi-agent architecture**.
+Only `search_*` and individual `get_venue`, `get_provider`, `get_caterer` retrievals
+are exposed to the relevant agents. The old full-record page tools and catalogue
+metadata traversal are no longer LLM tools. Fetch a promising record by ID to inspect
+logistics, exclusivity, extras and other detailed constraints before selecting it.
+Subjective comparisons and the final choice remain the specialist LLM's responsibility.
 
-A central orchestrator coordinates several specialized AI agents, each responsible for a specific aspect of event planning.
+## Offline geography and data provenance
 
-### A) Event Orchestrator
+`data/cities.json` contains 53 selected localities with real source coordinates,
+postal codes and French/Dutch aliases. Names are matched without accents, punctuation
+or case differences. Postal codes disambiguate Aalst (9300) and Halle (1500).
+Coordinates were copied from the [GeoNames Belgian postal-code extract](https://download.geonames.org/export/zip/BE.zip)
+on 2026-10-27, under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+Attribution: [GeoNames](https://www.geonames.org/).
+The [source documentation](https://download.geonames.org/export/zip/readme.txt)
+describes these as estimated WGS84 locality coordinates, not supplier addresses.
 
-**File:** `services/event_orchestrator.py`
+Haversine computes distances directly; there is no stored distance matrix and no
+runtime geocoding or internet request. These are approximate straight-line distances,
+not driving distances, travel times or billable mileage. Multiple supplier branches
+are checked separately and the nearest known branch is used. Unknown branches are
+reported. Andrimont's supplied coordinate needs verification for the Dison location;
+no position is assumed for the merged locality Nazareth-De Pinte. Both are reported
+as unresolved. Other unlisted user cities also produce an explicit missing-coordinate
+result, rather than guessed positions. Add sourced entries to extend coverage.
 
-The orchestrator is responsible for:
+The venue and caterer offers are fictional school-project data. Technical supplier
+names/locations are source data, but kits and prices are simulated. There are no
+live availability calendars, current quotes, weather integration or verified email
+contacts. Venue/catering prices are TTC; technical prices are HT and cannot be
+silently combined. The existing monetary tools validate full line amounts without
+inventing quantity extensions or tax rates.
 
-- Analyzing the user's request
-- Identifying the tasks required to organize the event
-- Selecting the appropriate agents
-- Coordinating communication between agents
-- Collecting and combining agent results
-- Managing conflicts between agent recommendations
-- Handling errors and retry limits
-- Producing the final event planning result
+## Central event state, memory and accounting
 
-The orchestrator does not need to perform every task itself. Instead, it delegates tasks to specialized agents.
+Each conversation in `logs/conv.json` now has a persistent `event_state`:
 
-### B) Specialized AI Agents
-
-The system is designed around four specialized agents.
-
-| Agent | Responsibilities |
-|---|---|
-| **Budget Agent** | Allocates the budget, estimates expenses, and checks financial constraints. |
-| **Decision Agent** | Selects suitable venues and service providers according to the user's requirements. |
-| **Planning Agent** | Creates the event schedule and considers logistical and weather constraints. |
-| **Writer Agent** | Generates the final report and email drafts for service providers. |
-
-Each agent can have its own:
-
-- System prompt
-- Specialized tools
-- Memory
-- Responsibilities
-- Execution logic
-
-### C) Multi-Agent Workflow
-
-```text
-             USER REQUEST
-                  |
-                  v
-          EVENT CONTROLLER
-                  |
-                  v
-          EVENT ORCHESTRATOR
-                  |
-          Analyze requirements
-                  |
-                  v
-          Create execution plan
-                  |
-       +----------+----------+
-       |          |          |
-       v          v          v
-   BUDGET     DECISION    PLANNING
-    AGENT       AGENT       AGENT
-       |          |          |
-       v          v          v
-   Budget      Venues      Schedule
-   analysis    Providers   Weather
-       |          |          |
-       +----------+----------+
-                  |
-                  v
-          EVENT ORCHESTRATOR
-                  |
-          Check consistency
-                  |
-                  v
-             WRITER AGENT
-                  |
-                  v
-             FINAL REPORT
-                  |
-                  v
-           USER VALIDATION
-                  |
-                  v
-             EMAIL DRAFTS
+```json
+{
+  "event": {"city": "Namur", "attendance": 100, "budget": 10000, "meal": false},
+  "selections": {
+    "venue": [{"id": "salle_054", "option_id": null}],
+    "technical": [{"id": "002", "option_id": 6}]
+  },
+  "budget": null,
+  "schedule": null,
+  "summary": null,
+  "tasks": {}
+}
 ```
 
-The exact agent execution order may depend on the user's request.
+`update_event(changes)` merges user requirements only, preserving omitted fields and
+explicit false values. Specialist results update `selections`, `budget`, `schedule`
+or `summary` automatically, without another LLM call. `tasks` contains small input
+fingerprints, result statuses and stale flags for reuse. Changed event constraints
+or upstream selections invalidate affected results; older results remain visible
+and marked stale. An explicit `refresh_reason` permits a user-requested replacement
+with unchanged constraints. Failed replacements retain the previous selection.
+`not_found` results are also reused instead of repeating the same failed search.
 
-For example, a venue selected by the Decision Agent may exceed the available budget. In that case, the orchestrator must coordinate another iteration to find a suitable alternative.
+`EventOrchestrator.get_planning_context(conversation_id)` reads this dictionary
+without an LLM call. A new service instance or application restart reloads it.
+Conversation IDs isolate all state and histories. A summary uses saved IDs and
+WriterAgent, not fresh searches. The first candidate is preferred; alternative
+venues/kits are not automatically all added to a budget.
 
----
+Existing conversations are read without destructive migration: legacy planning
+snapshots and recognizable structured specialist selections can initialize the
+state. Arbitrary prose is not mined for guessed IDs or decisions. The new field
+is saved when the conversation is used. Full agent histories and technical traces
+remain in their existing files, with credential redaction and atomic JSON writes.
+Writes are individually atomic, not one transaction for the entire interaction;
+use one application process per log directory.
 
-## 5. Agent Tools
+The supervisor receives the central state and at most two recent user/final-response
+turns; specialists receive a mission, event constraints and relevant IDs/calculations.
+Old tool research is not replayed. The message budget remains 32000 serialized
+characters (tool schemas are additional). Complete tool exchanges are retained or
+removed as units, never sliced JSON. Identical read-only searches in an agent run
+reuse their observations. This avoids repeated Python work; it does not manufacture
+an LLM answer or bypass the specialist's comparison.
 
-The `tools/` directory contains the functions and external services used by the AI agents.
+Defaults: 12 supervisor LLM iterations, 8 total specialist delegations, at most 2
+per specialist per interaction. Budget/venue/provider allow 8 iterations, schedule
+6 and writer 3. No automatic protocol correction or retry of an empty/truncated
+answer is added. The existing bounded provider rate-limit retry policy remains.
 
-To Do
+The API adapter now preserves `finish_reason` in messages and usage metadata.
+`length`, filtered/interrupted responses, empty output, malformed tool envelopes
+and tool-call JSON delivered as ordinary text cannot be treated as successful tool
+execution. Truncated tool calls are not executed. Available text/work can be returned
+as partial; saved selections remain available if the supervisor fails. Plain prose
+announcing an action never executes a tool, and no deterministic parser can certify
+all claims in a model's prose. Live-model recommendation quality is not guaranteed.
 
----
+The terminal displays reported input/output/total tokens, calls per agent and
+actual delegation count. `/usage` shows cumulative conversation/event usage in this
+process. Cached delegations make no specialist LLM calls. Usage is counted once
+using the existing request-ID journal, including reported usage for truncated
+responses. Unknown usage is marked; counters reset after restart and failed requests
+can incur unreported charges.
 
-## 6. Data Management
+## Observed failures and measurements
 
-The `data/` directory stores fictional information used by the agents.
+The inspected conversation contained usable supervisor prose rejected for missing
+`submit_result`, selected venue IDs left only in specialist history, and several
+empty responses at exactly the configured 2048 output-token limit. The previous
+adapter discarded `finish_reason`, so those logs alone cannot prove why each
+response was empty. Future traces retain that reason. The output ceiling was not
+silently increased to spend more tokens or mask missing responses.
 
-To Do
+No paid/live LLM benchmark was run. Measurements are serialized characters and
+mocked call counts, not a claim about billed token savings:
 
-### providers.json
+- A saved detailed VenueAgent response occupied 5082 characters. Its three IDs
+  require 153 characters in the normalized selection contract (about 97% less).
+- Ordinary final prose now needs one supervisor call. Previously it triggered a
+  protocol correction; a fully submitted final response also needed a tool call
+  followed by a final-text call. These extra protocol calls are removed.
+- Mocked restart tests show a repeated venue delegation with identical constraints
+  invokes the specialist zero times. Summary tests invoke only supervisor/writer.
+- Earlier local-search reductions remain: Namur / 30 km / 200 seated / 2000 EUR
+  returns 2388 characters for three candidates, versus 214488 for the catalogue.
 
-Contains information about event service providers, such as:
+The supervisor's business validation, submission checks, repair prompt, repair run
+and history-exhaustion inference were removed. The generic agent reports execution
+status directly. No new state manager, DTO hierarchy, persistence file, framework
+or dependency was added. The existing DAO stores a dictionary. The obsolete empty
+`model/__inti__.py` was removed during the preceding cleanup.
 
-- Company name
-- Service category
-- Location
-- Pricing
-- Capacity
-- Available services
+## Tests
 
-The data is fictional and intended for testing and demonstration.
-
----
-
-## 7. Memory and Database
-
-The `dao/` directory is intended to manage persistent data.
-
-The planned persistence layer will allow the application to:
-
-- Save previous conversations
-- Retrieve conversation history
-- Store validated event decisions
-- Preserve useful agent memory
-- Resume previous event planning sessions
-- Delete stored conversations and related data
-
-Each agent maintain its own memory, while the orchestrator manages the shared event context.
-
----
-
-## 8. Streaming and User Interface
-
-**File:** `view/view.py`
-
-The application is designed to display agent execution progressively through streaming.
-
-Instead of waiting for the entire event planning process to finish, the interface can display:
-
-- Active agent
-- Agent status
-- Generated text
-- Tool calls
-- Progress information
-- Errors
-- Final results
-
-The Controller connects the user interface to the orchestrator.
-
-The View is responsible for displaying information, while the agents and orchestrator remain independent of the presentation layer.
-
-### Expected communication flow
-
-```text
-USER
-  |
-  v
-VIEW
-  |
-  v
-CONTROLLER
-  |
-  v
-ORCHESTRATOR
-  |
-  v
-AI AGENTS
-  |
-  v
-STREAMING EVENTS
-  |
-  v
-CONTROLLER
-  |
-  v
-VIEW
+```powershell
+pip install -r requirements-dev.txt
+python -m pytest -q
 ```
 
-This separation makes it easier to replace the interface without changing the agent logic.
+Tests mock LLM calls, use temporary persistence and never read API credentials.
+They check delegation, actual search/tool execution, geographic boundaries,
+category-specific filters, bounded JSON/context, complete tool exchanges, saved
+history, automatic ID persistence, restart reuse, no-meal requests, replacement,
+plain final responses, truncation, malformed calls, loop limits and usage accounting.
+They cannot establish the quality of choices made by a live model or real supplier
+availability. Source coordinate precision and missing localities remain limitations.
 
----
-
-## 9. Logging and Tracing
-
-**File:** `model/trace.py`
-
-The tracing system is intended to monitor the execution of the multi-agent application.
-
-It can collect:
-
-- Agent execution history
-- LLM requests and responses
-- Tool calls
-- Execution duration
-- Errors and retries
-- Input tokens
-- Output tokens
-- Total token consumption
-- Estimated API costs
-
-Execution information can be stored in `logs/logs.json`.
-
-### Purpose
-
-Tracing makes it possible to analyze:
-
-1. Which agents were executed
-2. Which tools were used
-3. How long each operation took
-4. How many tokens were consumed
-5. Where execution errors occurred
-
-This information is useful for debugging, optimization, and evaluating the cost of the multi-agent architecture.
-
----
-
-## 10. Human Validation
-
-Human validation is an important part of the system.
-
-After the agents generate the event plan, the user can review:
-
-- Selected venues
-- Service providers
-- Total estimated cost
-- Event schedule
-- Planning constraints
-
-The user can then approve the plan or request modifications.
-
-Email drafts are generated or finalized after validation.
-
-The system does not automatically send emails or confirm reservations without authorization.
-
----
-
-## 11. Technologies
-
-The project is designed to use the following technologies:
-
-| Technology | Purpose |
-|---|---|
-| Python | Main programming language |
-| llm API | LLM inference |
-| JSON | Fictional venue and provider datasets |
-| Open-Meteo | Weather information |
-| Python virtual environment | Dependency isolation |
-| Git / GitHub | Version control and collaboration |
-| Database (to be determined) | Conversation history and persistent memory |
-
----
-
-## 12. Project Limitations
-
-This project is an academic prototype.
-
-Current design limitations include:
-
-- Venue and provider information is fictional.
-- Weather forecasts depend on API availability and forecast horizon.
-- AI-generated recommendations may contain errors.
-- Event costs are estimates and must be verified.
-- Reservations and email sending are not automated.
-- Human validation is required before finalizing the event plan.
-
----
-
-## 13. Project Status
-
-**Status: In development**
-
-This project is being developed as part of an academic course on AI agents and multi-agent orchestration.
-
-The architecture, agent responsibilities, tools, and persistence mechanisms may evolve during development.
-
----
-
-## 14. Authors
+## Authors and license
 
 - [Florian Samain](https://github.com/NwaSet)
 - [Yohann Ducourtieux](https://github.com/Nhanyo)
 
----
-
-## 15. License
-
-See the [LICENSE](LICENSE) file for licensing information.
+See [LICENSE](LICENSE) for project licensing. GeoNames data retains its separate
+CC BY 4.0 attribution above and in `data/cities.json`.

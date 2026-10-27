@@ -114,6 +114,25 @@ def get_caterer(caterer_id: str) -> dict:
     return _record("caterers.json", caterer_id)
 
 
+def get_item(category: str, item_id: str, option_id: str | int | None = None) -> dict:
+    """Resolve a stored ID, optionally returning only its kit/formula and shared terms."""
+    catalogs = {"venue": (get_venue, None), "provider": (get_provider, "kits"),
+                "technical": (get_provider, "kits"), "caterer": (get_caterer, "formules"),
+                "catering": (get_caterer, "formules")}
+    if category not in catalogs:
+        raise ValueError("No catalogue exists for this category.")
+    retrieve, options = catalogs[category]
+    record = retrieve(item_id)
+    if option_id is None:
+        return record
+    if options is None or isinstance(option_id, bool):
+        raise ValueError("This category/option identifier is invalid.")
+    for option in record[options]:
+        if type(option["id"]) is type(option_id) and option["id"] == option_id:
+            return {key: value for key, value in record.items() if key != options} | {"option": option}
+    raise LookupError("The option does not belong to this catalogue item.")
+
+
 def list_datasets() -> list[dict]:
     """Return counts and source context so callers can traverse every record.
 
