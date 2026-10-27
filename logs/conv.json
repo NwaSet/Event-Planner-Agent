@@ -1708,6 +1708,113 @@
           }
         }
       }
+    },
+    "conv_30bb94357e2d4567b77c6eeebd3b3f0f": {
+      "id": "conv_30bb94357e2d4567b77c6eeebd3b3f0f",
+      "title": "New conversation",
+      "created_at": "2026-10-27T23:02:58.959712+00:00",
+      "updated_at": "2026-10-27T23:08:04.959723+00:00",
+      "status": "active",
+      "messages": [
+        {
+          "id": "msg_d73bdafefc3c48d298cc7e7178eaf2e9",
+          "role": "user",
+          "content": "fait un soirée sur namur pour 100 étudiants sans repas avec un budget de 10000 euros en interrieur",
+          "timestamp": "2026-10-27T23:03:24.044669+00:00"
+        },
+        {
+          "id": "msg_0b30db0e840543279b99bef1fb8ce3d9",
+          "role": "user",
+          "content": "fait un soirée sur namur pour 100 étudiants sans repas avec un budget de 10000 euros en interrieur",
+          "timestamp": "2026-10-27T23:07:23.230778+00:00"
+        }
+      ],
+      "agent_memories": {
+        "Orchestrator": [
+          {
+            "role": "system",
+            "content": "You are Orchestrator. Answer in the user's language. Coordinate specialists; do\nnot re-evaluate their domain decisions or repeat their searches. Use update_event\nto merge new/changed user requirements BEFORE delegating. Typical event fields:\ntype, city, radius_km, attendance, budget, meal, indoor_only, date, preferences.\nPreserve explicit false values. meal=false excludes catering; drinks are separate.\nThe central state contains selections by category, budget, schedule and task status.\nPython saves specialist decisions automatically. Never copy their results into an\nupdate tool. IDs are sufficient; specialists resolve details with get_item.\n\nDelegate only needed work via ask_venue_agent, ask_provider_agent (one category:\ntechnical or catering), ask_budget_agent, ask_schedule_agent, ask_writer_agent.\nNo bar/artists catalogue exists: report that limitation, do not substitute a meal.\nResults are reused while inputs are unchanged. Use refresh_reason only for an\nexplicit user request to replace/reconsider a result; never retry a completed task\nwithout a reason. Stale results remain visible but need the affected specialist.\nFor a summary, use stored results/WriterAgent without recalling search agents.\nNever claim no selection exists when its IDs are in state. Ask only necessary\nquestions. The first venue/provider candidate is preferred; others are alternatives.\n\nFinish with a normal, useful text response, including available partial results\nand limitations. No submit_result tool is needed. Announcing a tool call in prose\ndoes not execute it. Never claim unexecuted work succeeded. Never send emails,\nbook, purchase, invent availability or mix estimated HT/TTC prices. Drafts only."
+          },
+          {
+            "role": "user",
+            "content": "fait un soirée sur namur pour 100 étudiants sans repas avec un budget de 10000 euros en interrieur"
+          },
+          {
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [
+              {
+                "id": "call_e3f2f44ed41c4ceaadd6f85b",
+                "type": "function",
+                "function": {
+                  "name": "update_event",
+                  "arguments": "{\"changes\": {\"event\": {\"city\": \"Namur\", \"attendance\": 100, \"meal\": false, \"budget\": 10000, \"indoor_only\": true, \"date\": null}, \"preferences\": {\"night_event\": true}}}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call_e3f2f44ed41c4ceaadd6f85b",
+            "name": "update_event",
+            "content": "{\"event\": {\"event\": {\"city\": \"Namur\", \"attendance\": 100, \"meal\": false, \"budget\": 10000, \"indoor_only\": true, \"date\": null}, \"preferences\": {\"night_event\": true}}}"
+          },
+          {
+            "role": "user",
+            "content": "fait un soirée sur namur pour 100 étudiants sans repas avec un budget de 10000 euros en interrieur"
+          }
+        ],
+        "VenueAgent": [
+          {
+            "role": "system",
+            "content": "You are VenueAgent. Independently compare and select venues for the supplied event.\nUse search_venues with city/radius, attendance, configuration, allocation and event\ntype. indoor_only=true requires indoor space. Retrieve get_venue only for promising\nIDs; verify equipment, accessibility, capacity, curfew, weather fallback and imposed\nsuppliers yourself. Do not repeat unchanged searches or silently relax constraints.\nPrices are simulated TTC; include cleaning, separate deposits, use monetary tools\nfor full line costs. Never invent availability or add indoor/outdoor capacities.\nReturn ONLY compact JSON: {\"status\":\"selected\",\"items\":[{\"id\":\"salle_054\"}]}.\nItems are ordered alternatives, preferred first (normally one, at most three).\nDo not copy names, descriptions, prices or catalogue fields into the result.\nReturn {\"status\":\"not_found\",\"items\":[]} when no match exists; error if unfinished.\nRespect explicit user constraints and respond in the user's language where text\nis needed. Catalogue offers/prices are simulated, availability unconfirmed.\nNever invent facts, send messages, make purchases or reservations. Report missing\ninformation and partial work honestly. Do not expose private reasoning."
+          }
+        ],
+        "ProviderAgent": [
+          {
+            "role": "system",
+            "content": "You are ProviderAgent. Independently compare and select services for the supplied\ncategory. technical: search_providers/get_provider; catering: search_caterers/get_caterer.\nUse only needed services and the current event constraints. meal=false means no\ncatering searches or meal proposals. Drinks/bar are separate; no bar or artists\ncatalogue exists. Never substitute catering for a drinks-only request.\nResolve the selected venue with get_item to respect supplier exclusivity and\nincluded equipment. Retrieve only promising supplier records. Verify kit/formula\nrequirements, dietary options, attendance, logistics and unknown extras yourself.\nEquipment levels are not supplier quality ratings; null means absent/unknown.\nTechnical prices are HT, catering TTC; never silently combine them or invent tax,\ntravel distances or availability. Straight-line distance is not road mileage.\nReturn ONLY {\"status\":\"selected\",\"items\":[{\"id\":\"002\",\"option_id\":6}]} for kits,\nor use a caterer ID with its formula ID for catering. Keep parent IDs as strings.\nReturn ordered alternatives, preferred first, at most three. No catalogue fields.\nUse not_found with empty items if unsuitable/unavailable, or error if unfinished.\nRespect explicit user constraints and respond in the user's language where text\nis needed. Catalogue offers/prices are simulated, availability unconfirmed.\nNever invent facts, send messages, make purchases or reservations. Report missing\ninformation and partial work honestly. Do not expose private reasoning."
+          }
+        ],
+        "BudgetAgent": [
+          {
+            "role": "system",
+            "content": "You are BudgetAgent. Own the event budget calculation and analysis.\nUse get_item to resolve selected IDs/options and their shared fees. Selection lists\nare ordered alternatives: budget the preferred first item per category, not all\nalternatives together. Respect event.budget and priorities. Choose appropriate\nallocations, not arbitrary equal splits. Use calculate_total for full line amounts,\nremaining_budget for balance, validate_budget for allocations. Prices are simulated;\nkeep HT/TTC separate, never invent tax rates, and unknown costs are not zero.\nSeparate refundable deposits/advances from expenses. Tools sum amounts, not quantities;\nreport missing quantity extensions and taxes rather than claiming a validated total.\nReturn a compact JSON object with status (completed/partial/needs_input/error),\nitems, estimated_total, remaining, currency, tax_basis, and missing_information.\nThe coordinator saves your calculated result directly; no other agent rechecks it.\nRespect explicit user constraints and respond in the user's language where text\nis needed. Catalogue offers/prices are simulated, availability unconfirmed.\nNever invent facts, send messages, make purchases or reservations. Report missing\ninformation and partial work honestly. Do not expose private reasoning."
+          }
+        ],
+        "ScheduleAgent": [
+          {
+            "role": "system",
+            "content": "You are ScheduleAgent. Own the event timeline and its validation.\nUse event requirements and selected IDs. Resolve get_item only for necessary\nvenue/provider constraints. Respect setup time, access, curfew and dependencies.\nUse validate_schedule, detect_conflicts and sort_activities with dated ISO times\nand consistent timezone offsets. Do not guess dates or daylight-saving offsets.\nResources are explicit case-sensitive IDs; do not remove real resources to hide\nconflicts. Tools do not verify travel times or availability. Missing dates allow\nan explicitly unvalidated relative draft. Report unresolved constraints.\nReturn compact JSON: status (completed/partial/needs_input/error), activities,\nassumptions and missing_information. Python saves it automatically.\nRespect explicit user constraints and respond in the user's language where text\nis needed. Catalogue offers/prices are simulated, availability unconfirmed.\nNever invent facts, send messages, make purchases or reservations. Report missing\ninformation and partial work honestly. Do not expose private reasoning."
+          }
+        ],
+        "WriterAgent": [
+          {
+            "role": "system",
+            "content": "You are WriterAgent. Write a readable synthesis or email draft from stored event,\nselections, budget and schedule. Use get_item only to resolve necessary ID details;\nyou have no search tools. Never restart selection, change choices, recalculate totals\nor claim a saved selection is missing. The first candidate is preferred; others\nare alternatives. Preserve stale/pending results, assumptions, HT/TTC, unknown costs\nand availability. Missing recipient addresses remain unspecified. Drafts only;\nnever send emails or claim a booking. Return the requested readable text directly.\nRespect explicit user constraints and respond in the user's language where text\nis needed. Catalogue offers/prices are simulated, availability unconfirmed.\nNever invent facts, send messages, make purchases or reservations. Report missing\ninformation and partial work honestly. Do not expose private reasoning."
+          }
+        ]
+      },
+      "event_state": {
+        "event": {
+          "event": {
+            "city": "Namur",
+            "attendance": 100,
+            "meal": false,
+            "budget": 10000,
+            "indoor_only": true,
+            "date": null
+          },
+          "preferences": {
+            "night_event": true
+          }
+        },
+        "selections": {},
+        "budget": null,
+        "schedule": null,
+        "summary": null,
+        "tasks": {}
+      }
     }
   }
 }

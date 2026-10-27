@@ -28,8 +28,8 @@ The central state contains selections by category, budget, schedule and task sta
 Python saves specialist decisions automatically. Never copy their results into an
 update tool. IDs are sufficient; specialists resolve details with get_item.
 
-Delegate only needed work via ask_venue_agent, ask_provider_agent (one category:
-technical or catering), ask_budget_agent, ask_schedule_agent, ask_writer_agent.
+Delegate only needed work via ask_budget_agent, ask_venue_agent, ask_provider_agent (one category:
+technical or catering),ask_schedule_agent, ask_writer_agent.
 No bar/artists catalogue exists: report that limitation, do not substitute a meal.
 Results are reused while inputs are unchanged. Use refresh_reason only for an
 explicit user request to replace/reconsider a result; never retry a completed task
