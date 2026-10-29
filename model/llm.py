@@ -154,7 +154,7 @@ def _enregistrer_usage(reponse, agent, duree):
                   completion_tokens=entree["completion_tokens"])
 
 
-def schema_outil(nom, description, proprietes, requis=None):
+def tool_schema(nom, description, proprietes, requis=None):
     """
     Construit la description d'un outil au format attendu par le modèle.
     proprietes : {"ville": {"type": "string", "description": "..."}, ...}
@@ -195,7 +195,7 @@ def message_assistant(message):
     return resultat
 
 
-def message_outil(appel, resultat):
+def tool_message(appel, resultat):
     """Message qui renvoie au modèle le résultat d'un outil (tool_call_id ET name : certains fournisseurs, dont Mistral, exigent les deux)."""
     if not isinstance(resultat, str):
         resultat = json.dumps(resultat, ensure_ascii=False)

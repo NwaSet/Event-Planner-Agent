@@ -1,54 +1,54 @@
 import json
 
 from model import trace
-from model.llm import chat, lire_arguments, message_assistant, message_outil, schema_outil
+from model.llm import chat, lire_arguments, message_assistant, tool_message, tool_schema
 
 
 class Agent:
-    def __init__(self, nom, instructions, outils=None, max_iterations=6):
-        self.nom = nom
+    def __init__(self, name, instructions, tools=None, max_iterations=6):
+        self.name = name
         self.instructions = instructions
         self.max_iterations = max_iterations
-        outils = outils or []
+        tools = tools or []
         # nom de l'outil -> fonction Python à exécuter
-        self.fonctions = {schema["function"]["name"]: fonction for fonction, schema in outils}
+        self.fonctions = {schema["function"]["name"]: fonction for fonction, schema in tools}
         # descriptions envoyées au modèle
-        self.schemas = [schema for _, schema in outils]
+        self.schemas = [schema for _, schema in tools]
 
-    def run(self, demande):
+    def run(self, request):
         """Traite une demande et renvoie la réponse finale (texte)."""
         messages = [
             {"role": "system", "content": self.instructions},
-            {"role": "user", "content": demande},
+            {"role": "user", "content": request},
         ]
-        trace.tracer(self.nom, "DEMANDE", demande)
+        trace.tracer(self.name, "DEMANDE", request)
 
         for _ in range(self.max_iterations):
-            message = chat(messages, tools=self.schemas or None, agent=self.nom)
+            message = chat(messages, tools=self.schemas or None, agent=self.name)
 
             # Pas d'outil demandé : c'est la réponse finale
             if not message.tool_calls:
                 texte = message.content or ""
-                trace.response(self.nom, texte)
+                trace.response(self.name, texte)
                 return texte
 
             # Le modèle a parfois écrit son raisonnement avant d'appeler un outil
             if message.content:
-                trace.think(self.nom, message.content)
+                trace.think(self.name, message.content)
 
             messages.append(message_assistant(message))
             for appel in message.tool_calls:
-                resultat = self.executer_outil(appel)
-                messages.append(message_outil(appel, resultat))
+                resultat = self.execute_tool(appel)
+                messages.append(tool_message(appel, resultat))
 
-        trace.tracer(self.nom, "INFO", f"Limite de {self.max_iterations} itérations atteinte : arrêt.")
+        trace.tracer(self.name, "INFO", f"Limite de {self.max_iterations} itérations atteinte : arrêt.")
         return "Je n'ai pas pu terminer : limite d'itérations atteinte."
 
-    def executer_outil(self, appel):
+    def execute_tool(self, appel):
         """Exécute l'outil demandé par le modèle et renvoie le résultat sous forme de texte."""
         nom_outil = appel.function.name
         arguments = lire_arguments(appel)
-        trace.action(self.nom, nom_outil, arguments)
+        trace.action(self.name, nom_outil, arguments)
 
         if nom_outil not in self.fonctions:
             resultat = f"Erreur : l'outil '{nom_outil}' n'existe pas. Outils disponibles : {list(self.fonctions)}"
@@ -60,19 +60,19 @@ class Agent:
 
         if not isinstance(resultat, str):
             resultat = json.dumps(resultat, ensure_ascii=False)
-        trace.observation(self.nom, resultat)
+        trace.observation(self.name, resultat)
         return resultat
 
-    def comme_outil(self, nom_outil, description):
+    def as_tool(self, nom_outil, description):
         """
         Transforme cet agent en outil utilisable par un autre agent (pattern Supervisor).
         Renvoie un couple (fonction, schema), comme les autres outils.
         """
-        def deleguer(demande):
+        def delegate(demande):
             return self.run(demande)
 
-        schema = schema_outil(nom_outil, description, {
+        schema = tool_schema(nom_outil, description, {
             "demande": {"type": "string",
                         "description": "La demande complète et précise à transmettre à cet agent."},
         })
-        return deleguer, schema
+        return delegate, schema
