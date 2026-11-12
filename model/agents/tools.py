@@ -87,6 +87,31 @@ def get_providers() -> dict :
 def get_venues() -> dict :
     ...
 
+def ask_user() -> dict :
+    raise NotImplementedError("create the schema and output")
+
+
+
+def get_next_day(day: str, from_date: str = None) -> str:
+    from datetime import date, timedelta
+
+    DAYS = {
+        "monday": 0,
+        "tuesday": 1,
+        "wednesday": 2,
+        "thursday": 3,
+        "friday": 4,
+        "saturday": 5,
+        "sunday": 6
+    }
+
+    start = date.fromisoformat(from_date) if from_date else date.today()
+    target = DAYS[day.lower()]
+
+    delta = (target - start.weekday()) % 7 or 7
+
+    return (start + timedelta(days=delta)).isoformat()
+
 # ---------------------------------------------------------------
 
 SCHEMA_METEO = tool_schema(
@@ -120,4 +145,28 @@ SCHEMA_VENUES = tool_schema(
     "get_venues",
     "Récupère les salles disponibles.",
     {}
+)
+
+SCHEMA_ASK_USER = tool_schema(
+    "ask_user",
+    "request a user authorization"
+)
+
+SCHEMA_NEXT_DAY = tool_schema(
+    "get_next_day",
+    "Returns the next date matching the requested weekday.",
+    {
+        "day": {
+            "type": "string",
+            "enum": [
+                "monday", "tuesday", "wednesday",
+                "thursday", "friday", "saturday", "sunday"
+            ],
+            "description": "The requested day of the week."
+        },
+        "from_date": {
+            "type": "string",
+            "description": "Reference date in YYYY-MM-DD format. Defaults to today if omitted."
+        }
+    }
 )
