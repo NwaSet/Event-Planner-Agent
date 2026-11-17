@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from rich.markup import escape
 from rich.table import Table
 
-from model import traces
+from model import trace as traces
 
 # --- Configuration ----------------------------------------------------------
 
@@ -159,6 +159,9 @@ def tool_schema(nom, description, proprietes, requis=None):
     Construit la description d'un outil au format attendu par le modèle.
     proprietes : {"ville": {"type": "string", "description": "..."}, ...}
     requis     : liste des paramètres obligatoires (par défaut : tous)
+                 Passer [] pour un outil dont tous les paramètres sont facultatifs.
+    Chat Completions utilise ici le mode non strict ; les paramètres facultatifs
+    peuvent être omis, et leurs schémas autorisent null si la fonction l'accepte.
     """
     return {
         "type": "function",
@@ -169,18 +172,22 @@ def tool_schema(nom, description, proprietes, requis=None):
                 "type": "object",
                 "properties": proprietes,
                 "required": list(proprietes) if requis is None else requis,
+                "additionalProperties": False,
             },
         },
     }
 
 
 def lire_arguments(appel):
-    """Transforme les arguments d'un appel d'outil (texte JSON) en dictionnaire."""
+    """Renvoie les arguments JSON ou une erreur structurée invalid_arguments."""
     try:
-        arguments = json.loads(appel.function.arguments or "{}")
-        return arguments if isinstance(arguments, dict) else {}
-    except json.JSONDecodeError:
-        return {}
+        raw = appel.function.arguments
+        arguments = json.loads("{}" if raw is None or raw == "" else raw)
+        if isinstance(arguments, dict):
+            return arguments
+        return {"error": "Les arguments doivent être un objet JSON.", "code": "invalid_arguments"}
+    except (ValueError, TypeError, RecursionError) as erreur:
+        return {"error": f"Arguments JSON invalides : {erreur}", "code": "invalid_arguments"}
 
 
 def message_assistant(message):

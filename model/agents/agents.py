@@ -20,7 +20,7 @@ def create_writer_agent() -> Agent:
     return Agent(
         name = "writer agent",
         instructions= PROMPT_WRITER,
-        tools = (ask_user, SCHEMA_ASK_USER)
+        tools = [(ask_user, SCHEMA_ASK_USER)]
     )
 
 def create_planning_agent() -> Agent:

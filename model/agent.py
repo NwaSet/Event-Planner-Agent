@@ -48,15 +48,18 @@ class Agent:
         """Exécute l'outil demandé par le modèle et renvoie le résultat sous forme de texte."""
         nom_outil = appel.function.name
         arguments = lire_arguments(appel)
-        trace.action(self.name, nom_outil, arguments)
+        trace.action(self.name, f"{nom_outil} : {arguments}")
 
-        if nom_outil not in self.fonctions:
-            resultat = f"Erreur : l'outil '{nom_outil}' n'existe pas. Outils disponibles : {list(self.fonctions)}"
+        if arguments.get("code") == "invalid_arguments":
+            resultat = arguments
+        elif nom_outil not in self.fonctions:
+            resultat = {"error": f"Outil inconnu : {nom_outil}", "code": "unknown_tool"}
         else:
             try:
                 resultat = self.fonctions[nom_outil](**arguments)
             except Exception as erreur:  # on renvoie l'erreur au modèle au lieu de planter
-                resultat = f"Erreur pendant l'exécution de {nom_outil} : {erreur}"
+                resultat = {"error": f"Erreur pendant l'exécution de {nom_outil} : {erreur}",
+                            "code": "tool_execution_error"}
 
         if not isinstance(resultat, str):
             resultat = json.dumps(resultat, ensure_ascii=False)
