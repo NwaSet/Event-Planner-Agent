@@ -19,7 +19,7 @@ def create_budgetary_agent() -> Agent:
 def create_writer_agent() -> Agent:
     return Agent(
         name = "writer agent",
-        instructions= PROMPT_WRITER
+        instructions= PROMPT_WRITER,
         tools = (ask_user, SCHEMA_ASK_USER)
     )
 
