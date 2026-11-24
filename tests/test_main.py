@@ -59,3 +59,10 @@ def test_execution_error_is_displayed(terminal, error):
     app.create_orchestrator.return_value.run.side_effect = error
     assert app.main() == 1
     assert terminal.surrond.call_args.args[2] == "red"
+
+
+def test_partial_result_has_distinct_exit_code_and_display(terminal):
+    app.create_orchestrator.return_value.last_status = "partial"
+    app.create_orchestrator.return_value.run.return_value = "Date trouvée, salle non résolue."
+    assert app.main() == 2
+    terminal.surrond.assert_any_call("Date trouvée, salle non résolue.", "Résultat partiel", "yellow")

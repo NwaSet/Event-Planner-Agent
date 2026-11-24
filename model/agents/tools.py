@@ -46,9 +46,15 @@ def _read_catalog(filename, key):
 
 def _validate_filters(filters, schema):
     """Validate the small subset of JSON Schema used by these search tools."""
+    if filters is None:
+        filters = {}
+    if not isinstance(filters, dict):
+        return None, "Filtres attendus sous forme d'objet."
     properties = schema["function"]["parameters"]["properties"]
     cleaned = {}
     for name, value in filters.items():
+        if name not in properties:
+            return None, f"Filtre inconnu : {name}"
         if value is None:
             continue
         spec = properties[name]

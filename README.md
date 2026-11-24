@@ -52,7 +52,7 @@ Users only need to describe the event they want to organize and specify their re
 - Maximum budget
 - Specific requirements or preferences
 
-The system analyzes the request, searches for suitable venues and service providers, manages the budget, creates a schedule, and generates a final event report with email drafts ready to be sent to the selected providers.
+The system analyzes one independent request, searches for suitable venues and service providers, allocates a limited budget when needed, and proposes a schedule. Reports and email drafts are produced only when requested; email drafts require user approval and are never sent automatically.
 
 The system uses fictional event-provider data for demonstration purposes and public weather information.
 
@@ -178,27 +178,23 @@ Event-Planner-Agent/
 ├── .venv/                 
 │
 ├── controller/
-│   └── event_controller.py       
-│
-├── dao/                        
+│   └── event_controller.py       # UI extension placeholder
 │
 ├── data/
-│   ├── providers.json           
-│   └── venues.json                
-│
-├── logs/
-│   └── logs.json              
+│   ├── providers.json
+│   ├── caterers.json
+│   ├── venues.json
+│   └── logs/logs.jsonl
 │
 ├── model/
-│   ├── __init__.py
-│   ├── agent.py                  
-│   ├── llm.py                  
-│   └── trace.py                
+│   ├── agent.py                 # ReAct loop and as_tool delegation
+│   ├── event_orchestrator.py    # LLM Supervisor
+│   ├── event_state.py           # Per-request data and objective checks
+│   ├── agents/                  # Four specialists, prompts, public tools and compact search
+│   ├── llm.py                   # API, counters and usage logs
+│   └── trace.py
 │
-├── services/
-│   └── event_orchestrator.py     
-│
-├── tools/                       
+├── tests/                       # Mocked LLM/API tests; network disabled
 │
 ├── view/
 │   └── view.py               
@@ -221,7 +217,7 @@ A central orchestrator coordinates several specialized AI agents, each responsib
 
 ### A) Event Orchestrator
 
-**File:** `services/event_orchestrator.py`
+**File:** `model/event_orchestrator.py`
 
 The orchestrator is responsible for:
 
@@ -251,7 +247,7 @@ Each agent can have its own:
 
 - System prompt
 - Specialized tools
-- Memory
+- Local conversation during one delegation
 - Responsibilities
 - Execution logic
 
@@ -301,17 +297,17 @@ Each agent can have its own:
              EMAIL DRAFTS
 ```
 
-The exact agent execution order may depend on the user's request.
+The diagram is illustrative: the Supervisor chooses useful tasks and their order. A fixed schedule skips Planning; an unlimited budget skips Budgetary; a simple answer skips Writer. Planning failure does not prevent catalogue recommendations, whose availability remains unverified. Python checks objective compatibility, including when a venue precedes Planning or follows a supplier selection. Selection returns exact IDs, including the formula or kit ID. Conflicts remain explicit instead of silently relaxing constraints.
 
-For example, a venue selected by the Decision Agent may exceed the available budget. In that case, the orchestrator must coordinate another iteration to find a suitable alternative.
+Before presenting venue candidates, Python checks that the requested catering and technical services have at least one compatible offer under that venue's restrictions. This prevents avoidable dead ends while leaving all qualitative choices to the specialists.
 
 ---
 
 ## 5. Agent Tools
 
-The `tools/` directory contains the functions and external services used by the AI agents.
+`model/agents/tools.py` contains the public catalogue searches, weekday calculation, Open-Meteo lookup and `ask_user` approval tool. Public `get_venues`, `get_caterers` and `get_providers` retain their original complete-catalogue fallback for absent, invalid or unmatched filters.
 
-To Do
+`model/agents/search.py` supplies the separate LLM view: `matched`, `no_match`, `invalid_filters` or `error`, with at most 5 candidates by default (10 maximum per observation). Only compatible formulas/kits are exposed, with exact IDs, prices, descriptions and constraints. Mandatory constraints are also applied when the specialist requests another search. No complete fallback catalogue is injected into an agent conversation.
 
 ---
 
@@ -338,18 +334,30 @@ The data is fictional and intended for testing and demonstration.
 
 ## 7. Memory and Database
 
-The `dao/` directory is intended to manage persistent data.
+Each `Supervisor.run(request)` creates a fresh `EventRun` containing an `event_data` dictionary: request, requirements, planning, budget, venue, catering, providers, documents and task statuses. Python alone updates validated results. Detailed catalogues stay local and are loaded once per run. A task's terminal status reuses its result or error; paraphrasing a delegation does not rerun a specialist. There is no separate context cache or dependency graph.
 
-The planned persistence layer will allow the application to:
+The Supervisor directly calls `planning_agent(demande=...)`, `budgetary_agent(demande=...)`, `decision_making_agent(demande=..., category=...)` or `writer_agent(demande=...)`. The mandatory `configure_event` tool has been removed. Each delegation can optionally supply `requirements` with only new known constraints, and `tasks` to announce the requested scope. Neither is required to start. Python preserves the original request and injects only relevant earlier decisions. Without prepared candidates, Decision-Making uses its category's search tool before returning IDs.
 
-- Save previous conversations
-- Retrieve conversation history
-- Store validated event decisions
-- Preserve useful agent memory
-- Resume previous event planning sessions
-- Delete stored conversations and related data
+An announced task list allows automatic stopping when all requested tasks are terminal; without it, the Supervisor can keep delegating and then finish naturally. Empty results never count as a successful event. A known limited budget requires Budgetary's allocation before selections; unknown or unlimited budgets need no allocation. A missing catering headcount can fail that task without blocking a venue recommendation. Errors do not cascade to independent tasks.
 
-Each agent maintain its own memory, while the orchestrator manages the shared event context.
+There is no conversation persistence, event reload or resumption. `supervisor.event_data` and `supervisor.counters` expose the last result for diagnostics only and are replaced on the next run. Catalogue references are released at the end of the run. Technical usage logs remain persistent.
+
+Limits are configurable without adding dependencies:
+
+```python
+from model.event_orchestrator import create_orchestrator
+
+supervisor = create_orchestrator(
+    max_iterations=6,       # Supervisor ReAct turns
+    max_llm_calls=24,        # Shared by all agents, HTTP retries and finalization
+    max_delegations=8,       # Actual specialist executions; reused results do not count
+)
+result = supervisor.run("Organise une soirée à Namur sans limite de budget.")
+```
+
+One correction is allowed for an invalid structured answer. Provider errors, `content_filter` and explicit refusals are distinguished from invalid JSON and are not repaired by reprompting. Identical `tool_use_failed` requests are not retried. Once announced tasks reach terminal states, or progress stops, a final turn without tools uses the remaining global budget. If finalization fails, Python returns the validated results and unresolved tasks. CLI exit code `0` means success, `2` a partial result, and `1` a configuration/execution failure.
+
+The existing positional calls `Agent.run(request)` and `Agent.as_tool(name, description)` remain valid. Optional keyword arguments connect validation, shared counters and completion checks. Decision-Making delegation now requires `category` (`venue`, `catering`, `provider`) alongside `demande`; all public catalogue function signatures are unchanged.
 
 ---
 
@@ -410,7 +418,7 @@ This separation makes it easier to replace the interface without changing the ag
 
 The tracing system is intended to monitor the execution of the multi-agent application.
 
-It can collect:
+It records successful LLM usage and exposes runtime traces:
 
 - Agent execution history
 - LLM requests and responses
@@ -420,9 +428,9 @@ It can collect:
 - Input tokens
 - Output tokens
 - Total token consumption
-- Estimated API costs
+- Estimated API costs (using configurable prices, not billing data)
 
-Execution information can be stored in `logs/logs.json`.
+Successful usage is stored in `data/logs/logs.jsonl`, including the returned model and finish reason. Per-run counters include all attempted LLM requests and rate-limit retries; the trace callback receives the final counters and status. Failed requests do not provide token usage, so the successful usage journal and attempt counter intentionally differ.
 
 ### Purpose
 
@@ -470,7 +478,6 @@ The project is designed to use the following technologies:
 | Open-Meteo | Weather information |
 | Python virtual environment | Dependency isolation |
 | Git / GitHub | Version control and collaboration |
-| Database (to be determined) | Conversation history and persistent memory |
 
 ---
 
@@ -485,7 +492,17 @@ Current design limitations include:
 - AI-generated recommendations may contain errors.
 - Event costs are estimates and must be verified.
 - Reservations and email sending are not automated.
-- Human validation is required before finalizing the event plan.
+- Human validation is required before finalizing email drafts.
+
+The catalogue cannot confirm availability. Provider kit prices are HT, while venue and catering prices are TTC; travel, VAT, drinks and extra staff may remain unpriced. The system reports known amounts and never certifies a complete final cost from those partial data. Unsupported constraints and the interpretation of natural language still rely on the Supervisor; qualitative selection remains an LLM task.
+
+Run all tests without paid calls:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+Tests block network access and mock LLM/API responses. They cover direct delegations without configuration, Namur, partial Planning failure, limited budgets, venue exclusivities, reversed ordering, deadlines/logistics, invalid outputs, duplicate work, limits, finalization, successive independent runs and email refusal. The mocked Namur scenario completes in 8 LLM calls and 4 delegations; this is a deterministic regression check, not a real-provider token benchmark. See `To Do.md` for executed checks and remaining real-LLM validation.
 
 ---
 
@@ -495,7 +512,7 @@ Current design limitations include:
 
 This project is being developed as part of an academic course on AI agents and multi-agent orchestration.
 
-The architecture, agent responsibilities, tools, and persistence mechanisms may evolve during development.
+The architecture, agent responsibilities and tools may evolve during development. Current event handling is strictly one-shot.
 
 ---
 

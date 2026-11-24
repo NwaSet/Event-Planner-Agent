@@ -5,10 +5,9 @@ from ..agent import Agent
 
 from .prompt import PROMPT_BUDGETARY, PROMPT_WRITER, PROMPT_PLANNING, PROMPT_DECISION_MAKING
 
-from .tools import get_meteo
-from .tools import SCHEMA_METEO
-from .tools import get_caterers, get_providers, get_venues, ask_user, get_next_day
-from .tools import SCHEMA_CATERERS, SCHEMA_PROVIDERS, SCHEMA_VENUES, SCHEMA_ASK_USER, SCHEMA_NEXT_DAY
+from .tools import get_meteo, ask_user, get_next_day
+from .tools import SCHEMA_METEO, SCHEMA_ASK_USER, SCHEMA_NEXT_DAY
+from .search import compact_tool
 
 def create_budgetary_agent() -> Agent:
     return Agent(
@@ -34,5 +33,5 @@ def create_decision_making_agent() -> Agent:
     return Agent(
         name = "decision making agent",
         instructions = PROMPT_DECISION_MAKING,
-        tools= [(get_caterers, SCHEMA_CATERERS), (get_providers, SCHEMA_PROVIDERS), (get_venues, SCHEMA_VENUES)]
+        tools=[compact_tool(category) for category in ("catering", "provider", "venue")]
     )

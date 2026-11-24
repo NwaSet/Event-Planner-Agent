@@ -3,6 +3,7 @@ import os
 import sys
 import time
 import uuid
+from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
 
@@ -32,6 +33,21 @@ demande_en_cours = uuid.uuid4().hex[:8]
 
 class ErreurLLM(Exception):
     """Erreur de configuration ou d'appel au LLM, avec un message clair en français."""
+
+
+class RunLimit(ErreurLLM):
+    """Le budget global de la demande est épuisé."""
+
+
+run_counters = ContextVar("run_counters", default=None)
+
+
+def count_llm_call():
+    counters = run_counters.get()
+    if counters is not None:
+        if counters["llm_calls"] >= counters["max_llm_calls"]:
+            raise RunLimit("Limite globale d'appels LLM atteinte.")
+        counters["llm_calls"] += 1
 
 
 def nouvelle_demande():
@@ -90,11 +106,17 @@ def chat(messages, tools=None, agent="?", temperature=0.3):
         parametres["tool_choice"] = "auto"
 
     for essai in range(len(ATTENTES_429) + 1):
+        # Le premier essai est compté par Agent, les retries HTTP ici.
+        if essai:
+            count_llm_call()
         debut = time.time()
         try:
             reponse = client().chat.completions.create(**parametres)
             break
         except openai.RateLimitError:
+            counters = run_counters.get()
+            if counters is not None and counters["llm_calls"] >= counters["max_llm_calls"]:
+                raise RunLimit("Limite globale d'appels LLM atteinte.") from None
             if essai == len(ATTENTES_429):
                 raise ErreurLLM("Limite de débit (erreur 429) toujours atteinte après plusieurs essais.\n"
                                 "  Attendez une minute, ou changez de fournisseur dans le .env.")
@@ -115,16 +137,18 @@ def chat(messages, tools=None, agent="?", temperature=0.3):
             raise ErreurLLM(f"Impossible de joindre {BASE_URL}.\n"
                             "  Vérifiez votre connexion internet (ou, avec Ollama, que 'ollama serve' tourne).") from None
         except openai.BadRequestError as e:
-            # Groq refuse lui-même un appel d'outil invalide (nom d'outil inventé...) : on redemande
-            if "tool_use_failed" in str(e) and essai < len(ATTENTES_429):
-                traces.tracer(agent, "INFO", "Appel d'outil invalide refusé par le fournisseur : nouvelle tentative...")
-                continue
+            # Une erreur sémantique ne se corrige pas en renvoyant la même requête.
             raise ErreurLLM(f"Requête refusée par le fournisseur (erreur 400) :\n  {e}\n"
                             "  Si le message parle de 'tools' : ce modèle ne sait pas appeler d'outils,\n"
                             "  choisissez-en un autre dans le .env.") from None
 
     duree = time.time() - debut
     _enregistrer_usage(reponse, agent, duree)
+    if reponse.choices[0].finish_reason in ("length", "content_filter"):
+        raise ErreurLLM("Réponse du modèle interrompue : " + reponse.choices[0].finish_reason)
+    refusal = getattr(reponse.choices[0].message, "refusal", None)
+    if isinstance(refusal, str) and refusal.strip():
+        raise ErreurLLM("Refus du fournisseur : " + refusal)
     return reponse.choices[0].message
 
 
@@ -136,6 +160,8 @@ def _enregistrer_usage(reponse, agent, duree):
         "demande": demande_en_cours,
         "agent": agent,
         "modele": MODELE,
+        "modele_retourne": getattr(reponse, "model", MODELE),
+        "finish_reason": getattr(reponse.choices[0], "finish_reason", None),
         "prompt_tokens": usage.prompt_tokens if usage else 0,
         "completion_tokens": usage.completion_tokens if usage else 0,
         "duree_s": round(duree, 2),

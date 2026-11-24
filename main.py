@@ -31,6 +31,9 @@ def main() -> int:
         orchestrateur = create_orchestrator()
         trace.tracer("Application", "INFO", "Traitement de votre demande en cours...")
         reponse = orchestrateur.run(demande)
+        if getattr(orchestrateur, "last_status", None) == "partial":
+            trace.surrond(reponse, "Résultat partiel", "yellow")
+            return 2
         trace.surrond(reponse or "L'orchestrateur n'a retourné aucun texte.", "Résultat", "green")
         return 0
 
