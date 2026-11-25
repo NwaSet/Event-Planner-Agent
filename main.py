@@ -8,21 +8,25 @@ from pathlib import Path
 from rich.table import Table
 from rich.text import Text
 
-from controller.event_controller import run_conversation
+from controller.event_controller import run_conversation, continue_conversation
 from dao.conversation_dao import ConversationError, list_conversations, load_conversation
 from model import trace
 from view.view import display_conversation
 
 
 STATUS_LABELS = {"running": "Non finalisée", "completed": "Terminée", "partial": "Partielle",
-                 "refused": "Validation refusée", "error": "Erreur", "interrupted": "Interrompue"}
-EXIT_CODES = {"completed": 0, "partial": 2, "refused": 2, "error": 1, "interrupted": 130}
+                 "refused": "Validation refusée", "error": "Erreur", "interrupted": "Interrompue", "waiting": "Votre réponse est attendue"}
+EXIT_CODES = {"completed": 0, "partial": 2, "refused": 2, "error": 1, "interrupted": 130, "waiting": 0}
 
 
 def show_result(conversation):
     status = conversation["status"]
     color = "green" if status == "completed" else "red" if status == "error" else "yellow"
     trace.surrond(conversation["messages"][-1]["content"], STATUS_LABELS[status], color)
+    pending = conversation["event_data"].get("pending_input")
+    if pending and pending["kind"] in ("plan_approval", "email_approval"):
+        trace.console.print("Validez-vous ce plan ? (oui/non)" if pending["kind"] == "plan_approval" else
+                            "Validez-vous ce brouillon exact ? (oui/non)")
 
 
 def show_history(directory=None):
@@ -32,7 +36,7 @@ def show_history(directory=None):
     entries = history["conversations"]
     if not entries:
         trace.surrond("Aucune conversation consultable.", "Historique", "cyan")
-        return
+        return 0
     table = Table(title="Conversations précédentes")
     for label in ("N°", "Titre", "Création", "Statut", "Identifiant"):
         table.add_column(label)
@@ -43,13 +47,34 @@ def show_history(directory=None):
     while True:
         choice = trace.console.input("Conversation à consulter (0 = retour) > ").strip()
         if choice == "0":
-            return
+            return 0
         if choice.isdecimal() and 1 <= int(choice) <= len(entries):
             conversation = load_conversation(entries[int(choice) - 1]["conversation_id"], directory)
             display_conversation(conversation, trace.console)
-            trace.console.input("Entrée pour revenir au menu principal > ")
-            return
+            return conversation_loop(conversation, directory)
         trace.surrond("Choisissez un numéro de la liste ou 0.", "Choix invalide", "yellow")
+
+
+def conversation_loop(conversation, directory=None, exit_code=0):
+    trace.surrond(conversation["title"], "Conversation — Quitter ou Entrée pour revenir au menu", "cyan")
+    if conversation["event_data"].get("pending_input"):
+        trace.surrond(conversation["event_data"]["pending_input"]["content"], "Question ou validation en attente", "yellow")
+    while True:
+        request = trace.console.input("Vous > ")
+        if not request.strip() or request.strip().casefold().rstrip(".! ") in ("quitter", "/quitter"):
+            return exit_code
+        try:
+            conversation = continue_conversation(conversation, request, directory=directory)
+            show_result(conversation)
+            exit_code = EXIT_CODES[conversation["status"]]
+            if exit_code == 130:
+                return exit_code
+        except ConversationError as error:
+            if error.conversation is not None:
+                conversation = error.conversation
+                show_result(conversation)
+            trace.surrond(str(error), "Échange non sauvegardé", "red")
+            exit_code = 1
 
 
 def main(*, directory=None) -> int:
@@ -63,7 +88,7 @@ def main(*, directory=None) -> int:
                 return exit_code
             try:
                 if choice == "2":
-                    show_history(directory)
+                    exit_code = show_history(directory)
                 elif choice == "1":
                     trace.surrond("Décrivez votre événement. Cette nouvelle demande sera sauvegardée.\n"
                                   "Les validations du plan et des emails restent demandées dans le terminal.",
@@ -78,6 +103,7 @@ def main(*, directory=None) -> int:
                     exit_code = EXIT_CODES[conversation["status"]]
                     if exit_code == 130:
                         return exit_code
+                    exit_code = conversation_loop(conversation, directory, exit_code)
                 else:
                     trace.surrond("Choisissez 1, 2 ou 3.", "Choix invalide", "yellow")
             except ConversationError as error:

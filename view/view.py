@@ -8,7 +8,7 @@ from rich.text import Text
 
 
 def display_conversation(conversation, console):
-    console.print(Panel(Text(conversation["title"]), title="Conversation — lecture seule"))
+    console.print(Panel(Text(conversation["title"]), title="Historique sauvegardé"))
     for message in conversation["messages"]:
         console.print(Panel(Text(message["content"]),
                             title="Vous" if message["role"] == "user" else "Résultat sauvegardé"))

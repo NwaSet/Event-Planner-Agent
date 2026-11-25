@@ -15,7 +15,7 @@ from dao import conversation_dao as dao
 def terminal(monkeypatch, tmp_path):
     output = StringIO()
     console = Console(file=output, width=160, color_system=None)
-    console.input = Mock(side_effect=["1", "  Un événement à Namur  ", "3"])
+    console.input = Mock(side_effect=["1", "  Un événement à Namur  ", "Quitter", "3"])
     monkeypatch.setattr(app.trace, "console", console)
     orchestrator = SimpleNamespace(run=Mock(return_value="Voici le résultat"), last_status="success",
                                    event_data={"tasks": {}, "documents": []}, event_details={})
@@ -27,10 +27,10 @@ def terminal(monkeypatch, tmp_path):
 def test_new_request_is_saved_and_returns_to_menu(terminal):
     assert app.main(directory=terminal.directory) == 0
     terminal.factory.assert_called_once()
-    terminal.orchestrator.run.assert_called_once_with("  Un événement à Namur  ")
+    terminal.orchestrator.run.assert_called_once_with("  Un événement à Namur  ", event_data={}, messages=[], interactive=True)
     assert "Voici le résultat" in terminal.output.getvalue()
     assert "Conversation sauvegardée" in terminal.output.getvalue()
-    assert terminal.console.input.call_count == 3
+    assert terminal.console.input.call_count == 4
     entry = dao.list_conversations(terminal.directory)["conversations"][0]
     assert dao.load_conversation(entry["conversation_id"], terminal.directory)["messages"][0]["content"] == "  Un événement à Namur  "
 
@@ -91,7 +91,7 @@ def test_history_reads_messages_and_decisions_without_saving_or_running(terminal
     output = terminal.output.getvalue()
     assert "Conversation illisible" in output
     assert "Ancienne demande" in output and "Ancien résultat" in output and "002" in output
-    assert "lecture seule" in output and path.read_bytes() == before
+    assert "Historique sauvegardé" in output and path.read_bytes() == before
 
 
 def test_two_new_conversations_do_not_reuse_previous_state(terminal):
@@ -99,7 +99,7 @@ def test_two_new_conversations_do_not_reuse_previous_state(terminal):
     first.event_data = {"venue": {"id": "salle_001"}}
     second = SimpleNamespace(run=Mock(return_value="Autre résultat"), last_status="success", event_data={}, event_details={})
     terminal.factory.side_effect = [first, second]
-    terminal.console.input.side_effect = ["1", "Première", "1", "Deuxième", "3"]
+    terminal.console.input.side_effect = ["1", "Première", "Quitter", "1", "Deuxième", "Quitter", "3"]
     assert app.main(directory=terminal.directory) == 0
     entries = dao.list_conversations(terminal.directory)["conversations"]
     assert len(entries) == 2
@@ -134,11 +134,11 @@ def test_missing_configuration_is_saved_as_error_and_does_not_block_history(tmp_
     factory = Mock(side_effect=AssertionError("Pas de configuration"))
     monkeypatch.setattr(event_orchestrator, "create_orchestrator", factory)
     console = Console(file=StringIO(), width=160)
-    console.input = Mock(side_effect=["1", "Demande", "2", "1", "", "3"])
+    console.input = Mock(side_effect=["1", "Demande", "Quitter", "2", "1", "", "3"])
     monkeypatch.setattr(app.trace, "console", console)
-    assert app.main(directory=tmp_path) == 1
+    assert app.main(directory=tmp_path) == 0
     factory.assert_not_called()
-    assert "lecture seule" in console.file.getvalue()
+    assert "Historique sauvegardé" in console.file.getvalue()
     assert dao.list_conversations(tmp_path)["conversations"][0]["status"] == "error"
 
 
@@ -175,3 +175,17 @@ def test_new_console_launch_error_is_reported(terminal, monkeypatch):
     assert app.launch([]) == 1
     assert "Impossible d'ouvrir la console Windows" in terminal.output.getvalue()
     terminal.factory.assert_not_called()
+
+
+def test_terminal_continues_reopens_and_updates_same_file(terminal):
+    terminal.console.input.side_effect = ["1", "Salle", "Ajoute un traiteur", "Quitter",
+                                         "2", "1", "Combien coûte la salle ?", "Quitter", "3"]
+    assert app.main(directory=terminal.directory) == 0
+    entries = dao.list_conversations(terminal.directory)["conversations"]
+    assert len(entries) == 1 and terminal.factory.call_count == 3
+    conversation = dao.load_conversation(entries[0]["conversation_id"], terminal.directory)
+    assert [item["content"] for item in conversation["messages"] if item["role"] == "user"] == [
+        "Salle", "Ajoute un traiteur", "Combien coûte la salle ?"]
+    calls = terminal.orchestrator.run.call_args_list
+    assert calls[1].kwargs["event_data"] == calls[2].kwargs["event_data"] == terminal.orchestrator.event_data
+    assert len(calls[2].kwargs["messages"]) == 4

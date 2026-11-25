@@ -152,7 +152,7 @@ def test_controller_automatically_saves_all_outcomes(tmp_path, status, refusal, 
     assert loaded["event_data"] == data and loaded["event_details"] == orchestrator.event_details
     orchestrator.event_data["tasks"]["new"] = {"status": "pending"}
     assert "new" not in conversation["event_data"]["tasks"]
-    orchestrator.run.assert_called_once_with("Exact request")
+    orchestrator.run.assert_called_once_with("Exact request", event_data={}, messages=[], interactive=True)
 
 
 @pytest.mark.parametrize("error,status", [(RuntimeError("SECRET provider body"), "error"), (KeyboardInterrupt(), "interrupted")])

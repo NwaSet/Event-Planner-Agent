@@ -10,7 +10,7 @@ from uuid import uuid4
 
 
 CONVERSATIONS_DIR = Path(__file__).resolve().parents[1] / "data" / "conversations"
-STATUSES = {"running", "completed", "partial", "refused", "error", "interrupted"}
+STATUSES = {"running", "completed", "partial", "refused", "error", "interrupted", "waiting"}
 
 
 class ConversationError(Exception):

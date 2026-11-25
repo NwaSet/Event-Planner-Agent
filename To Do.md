@@ -1,13 +1,51 @@
 # To Do — Event-Planner-Agent
 
+## Révisions des contraintes et reprise des spécialistes — 25 novembre 2026
+
+Intervention ciblée à partir des traces `899ca971`, `4e72bf9f`, `559f5934` et de la conversation sauvegardée correspondante. Les logs conservent les arguments des outils ; la sauvegarde confirme le conflit `location_scope`, la salle en `no_match` et le budget global remplacé par le plafond demandé pour le prestataire.
+
+- [x] Reproduire les causes avant correction : **10 échecs et 1 contrôle réussi** dans les nouveaux tests simulés. Les révisions étaient acceptées mais ne réouvraient pas les tâches sans sélection ; les plafonds de recherche devenaient persistants ; le montant local écrasait le budget global.
+- [x] Garder `revise_event` comme voie explicite de modification des exigences existantes, avec validation et retour à l'état précédent en cas de conflit. Une délégation contradictoire répond désormais `requires_revision` sans remplacer les décisions ni ajouter une erreur durable à la tâche.
+- [x] Séparer les filtres temporaires `max_budget`, `ids`, `limit` des exigences persistantes lors d'une délégation de sélection. Les essais restent locaux au tour ; `selection_filters` reste un relevé du choix effectué. Un filtre explicitement posé via `revise_event` reste persistant. Effectif, période et autres critères métier ne disparaissent pas lors de la reprise.
+- [x] Réouvrir uniquement les échecs dont les données utiles changent (`error`, `no_match`, blocages et limites compris). Réinitialiser leur registre après une révision explicite ou une nouvelle décision dépendante ; conserver les succès compatibles et les échecs indépendants. Une révision sans changement ne réinitialise rien.
+- [x] Conserver la limite de deux essais lors de simples corrections des filtres temporaires et les limites globales existantes. Une reformulation du message n'est pas un nouveau critère de recherche.
+- [x] Protéger le budget global dans le cas observé « trouve le prestataire sur Namur pour 2500 euros » : le montant est un plafond local du prestataire, y compris si le modèle le transmet à tort comme `budget_total`. Aucun appel Budgetary supplémentaire pour cette demande locale. Une modification explicite du budget global et sa répétition inchangée restent acceptées. Le plafond local reste soumis à l'allocation globale existante ; il ne déclenche pas une redistribution implicite.
+- [x] Tester la fermeture/réouverture du même JSON, la sélection après correction, l'absence de réexécution des autres spécialistes et les protections contre les répétitions. **23 nouveaux cas**, **221 tests ciblés puis 455 tests complets réussis**, réseau bloqué et aucun LLM réel ou payant.
+
+Commandes : `.\.venv\Scripts\python.exe -m pytest tests/test_constraint_revisions.py tests/test_dialogue.py tests/test_orchestration.py -q -p no:cacheprovider`, puis `.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider`. `git diff --check` sans erreur. Code modifié uniquement dans `model/event_state.py`, tests ajoutés dans `tests/test_constraint_revisions.py`. Prompts, orchestration, DAO, interface, finances et catalogues non modifiés pendant cette intervention. Conversations et logs existants conservés. `requirements.txt` a changé pendant l'intervention sans écriture de Codex ; cette modification extérieure a été laissée intacte.
+
+Restent ouverts :
+
+- [ ] Vérification avec un véritable LLM des demandes libres, des révisions et des choix qualitatifs. Aucun essai réel effectué ici.
+- [ ] Formulations ambiguës ou plusieurs montants/prestations : le garde-fou local couvre une demande visant le seul prestataire avec un montant explicite ; il ne remplace pas la clarification du Supervisor ni une compréhension générale du langage.
+- [ ] Autres erreurs d'interprétation visibles dans les traces (par exemple catégorie générique `soirée`, services/documents ajoutés sans demande) : hors de cette correction des contraintes et réexécutions. Aucune optimisation de prompts ou de tokens réalisée.
+
+## Conversation interactive — vérifiée en simulation le 25 novembre 2026
+
+- [x] A : état réutilisé entre tours, ajout ciblé d'un traiteur, réponse directe du Supervisor et contexte borné (4 derniers messages, 1 200 caractères chacun). 175 tests dialogue/orchestration réussis.
+- [x] B : poursuite du même JSON depuis le menu ou une ancienne sauvegarde ; ouverture seule sans agents, nouveaux champs initialisés à la prochaine interaction. 59 tests dialogue/menu/persistance réussis.
+- [x] C : clarifications et validations plan/email sauvegardées dans `pending_input`, retour à l'interface sans saisie bloquante dans l'agent. Accord/refus du brouillon conservé exactement, zéro appel LLM après réponse oui/non. 236 tests ciblés réussis, anciens tests one-shot inclus.
+- [x] D : modifications ciblées d'effectif, budget, salle, date et prestations ; conservation des décisions compatibles, réévaluation des autres et archivage des anciennes décisions/approbations. 252 tests ciblés réussis à cette étape.
+- [x] E : revue des critères extraits par les spécialistes, parcours Rich de reprise, README et audit actualisés. Vérification finale : **255 tests ciblés puis 432 tests complets réussis**.
+
+Chaque étape est vérifiée sans réseau ni appel LLM réel. Conversations personnelles, catalogues et modifications préexistantes de `requirements.txt` et des logs conservés.
+
+Commandes finales : `.\.venv\Scripts\python.exe -m pytest tests/test_dialogue.py tests/test_orchestration.py tests/test_main.py tests/test_conversations.py -q -p no:cacheprovider`, puis `.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider`. Les tests utilisent leurs propres répertoires temporaires. Le lanceur Windows vers une nouvelle console Rich reste couvert par simulation.
+
+Le contrôleur propose `run_conversation` et `continue_conversation`, sans saisie terminal. Un échange conserve le même identifiant et JSON ; l'ouverture seule reste sans exécution et sans écriture. Les anciens JSON version 1 reçoivent leurs champs manquants au prochain tour. Les limites LLM/délégations repartent à zéro par message. Le Supervisor reçoit seulement l'état utile et quatre échanges récents ; les archives des documents restent consultables dans la sauvegarde.
+
+Les validations sont des attentes persistées, distinctes des clarifications. Accord sur le plan → Writer ; refus → aucun email généré. Le oui/non sur le brouillon conserve son texte exact, sans nouveau LLM. Une modification substantielle archive les accords/documents avec leur révision et exige un nouvel accord pour le plan actualisé. Aucun envoi d'email. Les cinq agents, ReAct, `as_tool()`, calculs financiers et entrée directe one-shot restent disponibles ; le terminal utilise désormais le mode conversationnel demandé.
+
+**À tester avec un véritable LLM :** compréhension des modifications formulées librement, pertinence des clarifications et choix qualitatifs, parcours complet fermeture/réouverture/validation, gestion des erreurs du fournisseur et consommation réelle de tokens. Aucun de ces comportements n'est certifié par les simulations. Streamlit et plusieurs emails simultanément en attente restent hors périmètre.
+
 ## À faire
 - [x] P0 — Conserver le brouillon après validation humaine (vérifié en simulation).
 - [x] P0 — Valider le plan avant de générer les emails (vérifié en simulation).
 - [x] P1 — Transmettre les observations météo (vérifié en simulation, intégration réelle encore à tester).
 - [ ] P1 — Gérer plusieurs emails indépendants.
-- [ ] P1 — Afficher les statuts des validations.
-- [ ] Reprise et modification d'un événement sauvegardé.
-- [ ] Invalidation ciblée des décisions et accords devenus incompatibles après modification.
+- [x] P1 — Afficher les statuts des validations dans le terminal (simulation).
+- [x] Reprise et modification d'un événement sauvegardé (simulation).
+- [x] Invalidation ciblée des décisions et accords devenus incompatibles après modification (simulation).
 - [ ] Interface Streamlit.
 - [ ] Affichage des conversations dans Streamlit avec les mêmes fonctions DAO.
 

@@ -52,7 +52,7 @@ Users only need to describe the event they want to organize and specify their re
 - Maximum budget
 - Specific requirements or preferences
 
-The system analyzes one independent request, searches for suitable venues and service providers, allocates a limited budget when needed, and proposes a schedule. Reports and email drafts are produced only when requested; email drafts require user approval and are never sent automatically.
+The system maintains an event across successive messages, searches for suitable venues and service providers, allocates a limited budget when needed, and proposes a schedule. Reports and email drafts are produced only when requested; the plan and each email draft require separate user approval. Emails are never sent automatically.
 
 The system uses fictional event-provider data for demonstration purposes and public weather information.
 
@@ -153,9 +153,23 @@ Event Planner Agent
 3. Quitter
 ```
 
-Choose **1**, describe the event and answer any human validation prompts. Each request starts a fresh multi-agent run and is saved automatically. After the result, return to the menu or choose **3** to quit. Relaunch `python main.py`, choose **2**, then select a conversation by number to consult its saved messages and event record. Press Enter to return to the menu; `0` returns from the history list without opening anything.
+Choose **1** and describe the event. After each answer, the `Vous >` prompt accepts another message for the same event. Exchanges and decisions are saved automatically in the same JSON file. Type **Quitter** (or press Enter without a message) to return to the menu, then **3** to close the application. Relaunch `python main.py`, choose **2**, and select a conversation to read its history and continue it. `0` returns from the history list without opening anything.
 
-History works without a configured API key. Only creating a new event checks the LLM configuration. Opening a saved conversation never runs agents, reloads catalogues, recalculates decisions or requests approval again.
+History works without a configured API key. Opening a saved conversation never runs agents, reloads catalogues or recalculates decisions. Only submitting a new message starts a turn. A simple question can be answered by the Supervisor from saved decisions; it does not require specialist calls. A yes/no draft approval or plan refusal is recorded entirely in Python, even without an API key. Accepting the plan starts Writer and requires model configuration.
+
+```text
+Vous > Organise une soirée à Namur pour 100 personnes.
+Assistant > [Proposition et décisions sauvegardées]
+Vous > Ajoute un traiteur.
+Vous > Combien coûte la salle ?
+Vous > Rédige un email pour demander un devis à la salle.
+Assistant > [Plan consolidé à approuver]
+Vous > oui
+Assistant > [Brouillon exact à approuver]
+Vous > oui
+Vous > Finalement nous serons 150.
+Vous > Quitter
+```
 
 ### Example request
 
@@ -181,7 +195,7 @@ The system aims to generate:
 - Email drafts for contacting service providers
 - A final event planning report
 
-The user must validate the proposed event plan before the email drafts are finalized.
+The user must validate the proposed event plan before Writer generates any email draft, then approve or refuse the exact draft in a separate exchange.
 
 ---
 
@@ -193,7 +207,7 @@ Event-Planner-Agent/
 ├── .venv/                 
 │
 ├── controller/
-│   └── event_controller.py       # Fresh run + automatic conversation saving
+│   └── event_controller.py       # New/resumed turns + automatic conversation saving
 │
 ├── dao/
 │   └── conversation_dao.py       # JSON persistence, independent of agents/UI
@@ -208,7 +222,7 @@ Event-Planner-Agent/
 ├── model/
 │   ├── agent.py                 # ReAct loop and as_tool delegation
 │   ├── event_orchestrator.py    # LLM Supervisor
-│   ├── event_state.py           # Per-request data and objective checks
+│   ├── event_state.py           # Event state, revisions and objective checks per turn
 │   ├── agents/                  # Four specialists, prompts, public tools and compact search
 │   ├── llm.py                   # API, counters and usage logs
 │   └── trace.py
@@ -304,16 +318,19 @@ Each agent can have its own:
           Check consistency
                   |
                   v
+          CONSOLIDATED PLAN
+                  |
+                  v
+          USER PLAN APPROVAL
+                  |
+                  v
              WRITER AGENT
                   |
                   v
-             FINAL REPORT
-                  |
-                  v
-           USER VALIDATION
-                  |
-                  v
              EMAIL DRAFTS
+                  |
+                  v
+          USER DRAFT APPROVAL
 ```
 
 The diagram is illustrative: the Supervisor chooses useful tasks and their order. A fixed schedule skips Planning; an unlimited budget skips Budgetary; a simple answer skips Writer. Planning failure does not prevent catalogue recommendations, whose availability remains unverified. Python checks objective compatibility, including when a venue precedes Planning or follows a supplier selection. Selection returns exact IDs, including the formula or kit ID. Conflicts remain explicit instead of silently relaxing constraints.
@@ -353,7 +370,11 @@ The data is fictional and intended for testing and demonstration.
 
 ## 7. Memory and Database
 
-Each `Supervisor.run(request)` creates a fresh `EventRun` containing an `event_data` dictionary: request, requirements, planning, budget, venue, catering, providers, documents and task statuses. Python alone updates validated results. Detailed catalogues stay local and are loaded once per run. Validated results and permanent failures are reused. A repairable failure permits one further attempt when relevant structured parameters or earlier decisions change; identical parameters or a paraphrased instruction do not rerun a specialist. A small per-task register stores only the attempt count and last relevant input. There is no result cache or dependency graph.
+Each turn creates an `EventRun` with fresh call/delegation limits and optionally restores the saved `event_data`: initial request, current requirements, planning, budget, selections, documents and task statuses. The controller uses `Supervisor.run(request, event_data=..., messages=..., interactive=True)`. The direct `Supervisor.run(request)` entry point retains its original independent one-shot behavior. Python alone updates validated results. Catalogues stay local and are loaded once per turn. Existing successful tasks are reused; explicit revisions reopen only affected tasks. Within a turn, the existing bounded retry checks still prevent duplicate work. There is no second orchestrator or generic dependency engine.
+
+The Supervisor receives the initial request (up to 4,000 characters), current constraints, valid decisions, calculated costs, the pending question and at most four recent messages (1,200 characters each). Full user-facing history remains in JSON for consultation; specialist prompts and observations are not replayed. `clarify(question)` saves one pending clarification and ends the turn. Its answer is provided to the Supervisor on the next message.
+
+For explicit changes, the Supervisor calls `revise_event`: updated `requirements`, `replace` for another proposal, `remove` for a cancelled service, or `unset` for an abandoned constraint. Python rechecks capacity, offer suitability, schedules, allocations and venue-imposed suppliers. Compatible selections remain; incompatible selections are archived and marked pending for the appropriate specialist. Budgetary revises allocations when the ceiling changes, and Planning receives the previous schedule when moving the event. Each material change invalidates current approvals and archives documents with their original text, approval and revision. Archived documents are not presented as approved for the new plan.
 
 The Supervisor directly calls `planning_agent(demande=...)`, `budgetary_agent(demande=...)`, `decision_making_agent(demande=..., category=...)` or `writer_agent(demande=...)`. The mandatory `configure_event` tool has been removed. Each delegation can optionally supply `requirements` with only new known constraints, and `tasks` to announce the requested scope. Neither is required to start. Python preserves the original request and injects only relevant earlier decisions. Without prepared candidates, Decision-Making uses its category's search tool before returning IDs.
 
@@ -361,7 +382,7 @@ Preferences use a text format; dictionary input is normalized to compact JSON te
 
 An announced task list allows automatic stopping when all requested tasks are terminal; without it, the Supervisor can keep delegating and then finish naturally. Empty results never count as a successful event. A known limited budget requires Budgetary's allocation before selections; unknown or unlimited budgets need no allocation. A missing catering headcount can fail that task without blocking a venue recommendation. Errors do not cascade to independent tasks.
 
-The controller persists each new run locally; reopening it is read-only. `supervisor.event_data` and `supervisor.counters` still describe only the current run and are replaced on the next one. Before releasing catalogue references, the Supervisor captures `event_details`: selected venue/caterer/provider names and offers plus calculated financial details. The controller saves this snapshot alongside the exact `event_data`, without duplicating full catalogues or private agent histories. Technical usage logs remain separate.
+The controller persists every turn in the same conversation file, keeping its ID, title and creation date. Opening alone is read-only; submitting a message resumes the saved event. Before releasing catalogue references, the Supervisor captures `event_details`: selected names, offers and calculated financial details. The controller saves this snapshot alongside `event_data`, without duplicating full catalogues or private agent histories. Technical usage logs remain separate.
 
 ### Local conversation format and DAO
 
@@ -388,10 +409,12 @@ The version 1 structure is:
 
 The empty objects above stand for the actual saved data, without filling in missing decisions:
 
-- `messages`: exact original request and final response, including whitespace; user-facing history only.
+- `messages`: successive user messages and assistant responses, including whitespace; user-facing history only.
 - `event_data`: original request, requirements, dates, budget allocation, selected IDs, documents, task errors, human approvals, weather observations and geographic fallback state, as available from the run. IDs such as `"002"` remain strings; numeric kit IDs remain numbers.
 - `event_details`: `venue`, `catering`, `providers` and `costs` snapshots captured during execution, so historical names, offers and prices do not depend on later catalogue changes. If the snapshot cannot be built, an `unavailable` explanation is stored; the original decisions and response remain available.
-- Status: `running`, `completed`, `partial`, `refused`, `error` or `interrupted`. A human refusal is distinguished from a technical failure; its exact plan/draft and approval status remain in `event_data`.
+- Status: `running`, `completed`, `partial`, `refused`, `error`, `interrupted` or `waiting`. A human refusal is distinguished from a technical failure; its exact plan/draft and approval status remain in `event_data`.
+
+Optional event fields include `pending_input` (`clarification`, `plan_approval` or `email_approval`), `revision`, `document_archive`, `approval_archive`, `decision_archive` and effective `selection_filters`. The JSON envelope stays at version 1. Older saves remain readable without rewriting; missing event fields receive defaults when the next turn starts.
 
 The DAO uses standard JSON types, with explicit validation of the format and timestamps. Unsupported Python objects and non-finite floats are rejected with a clear error, never hidden with `default=str`. The current event data and financial outputs already use JSON-compatible types.
 
@@ -399,7 +422,7 @@ The DAO uses standard JSON types, with explicit validation of the format and tim
 from dao.conversation_dao import (
     create_conversation, save_conversation, list_conversations, load_conversation,
 )
-from controller.event_controller import run_conversation
+from controller.event_controller import run_conversation, continue_conversation
 
 # New execution, including automatic saving (this calls the configured models):
 conversation = run_conversation("Organise une soirée à Namur.")
@@ -408,6 +431,9 @@ conversation = run_conversation("Organise une soirée à Namur.")
 history = list_conversations()  # {"conversations": [metadata...], "errors": [diagnostics...]}
 saved = load_conversation(conversation["conversation_id"])
 
+# Explicit new message in the same conversation (may call the configured models):
+saved = continue_conversation(saved, "Ajoute un traiteur.")
+
 # Lower-level creation and writing, without agents:
 draft = create_conversation("Une nouvelle demande")  # in-memory record only
 path = save_conversation(draft)
@@ -415,15 +441,15 @@ path = save_conversation(draft)
 
 `save_conversation`, `list_conversations`, `load_conversation` and `run_conversation` accept an optional `directory` argument, useful for tests or another local frontend. `save_conversation` returns the final `Path`; `load_conversation` returns independent data; `list_conversations` returns metadata sorted by creation date, newest first, and separate errors for unreadable files. `ConversationError` reports invalid IDs, missing files, corrupt/incompatible JSON and storage failures. IDs cannot contain arbitrary paths; symbolic links to conversation files are rejected.
 
-### Saving, errors and read-only reopening
+### Saving, errors and resuming
 
-The controller saves the request with status `running` before any LLM call, then saves the final complete, partial, refused or failed result. A handled interruption preserves decisions already available. Each save writes a temporary file in the same directory, flushes it and atomically replaces the destination. An initial storage failure prevents execution. If the final write fails, the terminal still displays the in-memory result and explicitly reports the storage failure; the previous valid file remains available.
+The controller saves each new message with status `running` before any LLM call, then saves the complete, partial, waiting, refused or failed result. A handled interruption preserves decisions already available. Each save writes a temporary file in the same directory, flushes it and atomically replaces the destination. An initial storage failure prevents execution. If the final write fails, the terminal still displays the in-memory result and explicitly reports the storage failure; the previous valid file remains available.
 
 An abrupt process termination may leave only the initial `running` record: there is no checkpoint after every tool call and no automatic resumption. Reopening displays only what was actually saved, including a notice for an unfinished run. It does not modify the file, even its modification timestamp. Corrupt files are reported individually without hiding valid conversations. This local version has no database, locking for concurrent writers, authentication or multi-user support.
 
 No trace listener is used for persistence. Prompts, reasoning, API keys, `.env` contents, model usage and technical logs are not copied into conversations. Existing technical logs remain in `data/logs/`; conversation files contain user-facing text and event decisions. This is an unencrypted local history, not a remote service.
 
-The DAO has no Rich, terminal input, Streamlit or model imports. A future Streamlit UI can reuse these same functions and `run_conversation` for new requests. Continuing an old event requires a separate design for revisions, affected decisions and human approvals; that functionality is intentionally not implemented here.
+The DAO and controller have no Rich, terminal input or Streamlit dependencies. A future UI can reuse `run_conversation` and `continue_conversation` (both accept `directory`) and submit answers from widgets. Questions and approvals are stored as pending state; no interactive agent remains blocked on terminal `input()`. Streamlit itself is not implemented.
 
 Limits are configurable without adding dependencies:
 
@@ -438,7 +464,7 @@ supervisor = create_orchestrator(
 result = supervisor.run("Organise une soirée à Namur sans limite de budget.")
 ```
 
-One correction is allowed for an invalid structured answer. Provider errors, `content_filter` and explicit refusals are distinguished from invalid JSON and are not repaired by reprompting. Identical `tool_use_failed` requests are not retried. Once announced tasks are finished, or a limit stops progress, the Supervisor returns the verified Python summary without a redundant LLM synthesis. If it finishes naturally without another tool call, its final text is also replaced by the verified summary. Standalone specialists retain their final turn when necessary, within the shared budget. On leaving the menu, CLI exit codes reflect the last new execution: `0` for success (or consultation only), `2` for a partial/refused result, `1` for a configuration/execution/storage failure, and `130` for interruption.
+One correction is allowed for an invalid structured answer. Provider errors, `content_filter` and explicit refusals are distinguished from invalid JSON and are not repaired by reprompting. Identical `tool_use_failed` requests are not retried. Completed actions use the checked Python summary without a redundant synthesis call. In conversation mode, a direct Supervisor answer without actions is retained. Standalone specialists retain their final turn when necessary, within the shared budget. On leaving the menu, CLI exit codes reflect the last interaction: `0` for success, a pending human answer or consultation only; `2` for a partial/refused result; `1` for configuration/execution/storage failure; and `130` for interruption.
 
 The user summary displays local dates and times, venue and supplier names, offer descriptions, calculated amounts and unresolved tasks. Venue exclusivities are shown as authorized supplier names instead of a JSON object. Internal IDs remain in `event_data`; missing catalogue references are explicitly marked for verification. Availability and incomplete pricing remain conditional.
 
@@ -543,11 +569,9 @@ After the agents generate the event plan, the user can review:
 - Event schedule
 - Planning constraints
 
-The user can approve or refuse the plan. A refusal stops email generation for that run; revisions are not implemented yet.
+Python presents the consolidated plan before any email generation and saves the pending approval. A refusal preserves the plan and stops Writer. Acceptance is recorded in `event_data.plan_approval` and permits Writer to generate the draft. Writer's existing `ask_user` tool saves the exact draft as a separate pending approval, then immediately returns to the interface. On the next yes/no message, Python stores the exact text and approval status in `event_data.documents`, including refused drafts, with no further LLM call.
 
-Email drafts are generated or finalized after validation.
-
-The system does not automatically send emails or confirm reservations without authorization.
+An edit during validation is handled as an explicit revision, never implicit approval. Material changes clear current approval and archive prior documents and agreements with their revision. A new email requires approval of the new plan. No email sending or booking mechanism is implemented.
 
 ---
 
@@ -597,7 +621,7 @@ Tests block network access and mock LLM/API responses. They cover direct delegat
 
 This project is being developed as part of an academic course on AI agents and multi-agent orchestration.
 
-The architecture, agent responsibilities and tools may evolve during development. Each new event execution remains one-shot. Conversations are saved locally and can be reopened read-only; saved events cannot yet be resumed or modified.
+Conversations can be continued, reopened and revised through the Rich terminal while keeping the five AI agents, ReAct, `as_tool()` and the existing JSON DAO. Regression tests simulate the twenty requested conversation scenarios with network access blocked. Actual model interpretation, qualitative choices, token consumption and the full interactive journey with a real LLM still require a separate real-provider trial; these changes were tested without paid calls. Multiple simultaneously active email drafts and Streamlit remain outside this implementation.
 
 ---
 

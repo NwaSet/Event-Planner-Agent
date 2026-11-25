@@ -4,7 +4,8 @@ from . import trace
 from .agent import Agent
 from .agents import create_all_agents
 from .agents.search import CATALOGS
-from .event_state import EventRun, TASKS, REQUIREMENT_PROPERTIES
+from .event_state import EventRun, TASKS, REQUIREMENT_PROPERTIES, encode
+from .llm import tool_schema
 
 
 PROMPT_SUPERVISOR = """
@@ -78,6 +79,30 @@ avec noms, dates, offres et réserves utiles. Les catalogues ne prouvent aucune 
 Si une tâche échoue ou une limite est atteinte, présente les résultats partiels et les conflits.
 """
 
+CONVERSATION_INSTRUCTIONS = """
+Mode conversation : current_request est le nouveau message ; initial_request n'est pas une nouvelle commande.
+Les contraintes et décisions courantes priment sur les formulations historiques.
+Réponds directement aux questions simples grâce aux données et montants Python fournis, sans rappeler les spécialistes.
+N'invente ni coût, ni décision, ni validation. Ne recalcule pas les montants toi-même.
+Délègue uniquement les nouvelles actions demandées ; un succès précédent reste acquis.
+Pour un ajout, annonce les nouvelles tasks et transmets seulement les exigences nouvelles.
+Ne recrée pas l'événement à chaque message.
+Si une information indispensable manque, appelle clarify(question) : une seule question utile,
+sans inventer sa réponse. answered_question donne la question à laquelle l'utilisateur répond.
+Pour les emails, Python sauvegarde les validations en attente et rend la main à l'interface.
+Ne traite pas une clarification comme un accord sur le plan ou sur un email.
+Pour modifier des contraintes déjà connues, appelle revise_event(requirements=...) avant de déléguer.
+Utilise replace=["venue"] pour une autre salle, replace=["planning"] pour décaler une date,
+remove=["catering"] pour supprimer le traiteur, unset pour retirer une exigence explicitement abandonnée.
+Le budget null signifie retirer le plafond. Ne modifie que les contraintes explicitement demandées.
+Après revise_event, traite les tâches pending utiles : Budgetary avant les choix si le budget change,
+Planning si les horaires changent, puis uniquement les sélections invalidées. Préserve les autres succès.
+Un ajout de prestation est une délégation nouvelle, pas une raison de remplacer les décisions indépendantes.
+Un nouvel email après un ancien document utilise replace=["documents"] puis Writer.
+Une demande de modification pendant une validation passe par revise_event, jamais par un accord implicite.
+Les archives ne sont pas des choix actuels ; les documents approuvés d'une ancienne version ne valent pas pour la nouvelle.
+"""
+
 
 class Supervisor(Agent):
     def __init__(self, max_iterations=15, max_llm_calls=24, max_delegations=8):
@@ -109,21 +134,38 @@ class Supervisor(Agent):
             definitions.append(agent.as_tool(name, f"Délègue {task or 'une sélection par catégorie'} ; contexte ajouté par Python.",
                                              handler=handler, properties=properties,
                                              required=["demande"] + (["category"] if task is None else [])))
+        if run is not None and run.interactive:
+            definitions.append((run.clarify, tool_schema("clarify", "Demander une précision indispensable et terminer ce tour.",
+                                                       {"question": {"type": "string"}}, requis=["question"])))
+            definitions.append((run.revise_event, tool_schema("revise_event", "Modifier uniquement les contraintes/actions explicitement demandées ; conserver les choix encore valides.", {
+                "requirements": {"type": "object", "properties": REQUIREMENT_PROPERTIES, "additionalProperties": False},
+                "replace": {"type": "array", "items": {"type": "string", "enum": list(TASKS)}},
+                "remove": {"type": "array", "items": {"type": "string", "enum": ["venue", "catering", "provider", "documents"]}},
+                "unset": {"type": "array", "items": {"type": "string", "enum": list(REQUIREMENT_PROPERTIES)}},
+            })))
         self.fonctions = {schema["function"]["name"]: function for function, schema in definitions}
         self.schemas = [schema for _, schema in definitions]
 
-    def run(self, request):
+    def run(self, request, *, event_data=None, messages=None, interactive=False):
         self.event_details = {}
-        run = EventRun(request, self.max_llm_calls, self.max_delegations)
+        run = EventRun(request, self.max_llm_calls, self.max_delegations, event_data=event_data, interactive=interactive)
         self._bind(run)
+        self.instructions = PROMPT_SUPERVISOR + (CONVERSATION_INSTRUCTIONS if interactive else "")
         # Diagnostic du dernier run seulement ; remplacé intégralement à chaque demande.
         self.event_data, self.counters = run.event_data, run.counters
         try:
-            response = super().run(request, counters=run.counters,
-                                   completed=lambda: run.complete() and not run.can_repair(),
-                                   validate=run.validate_final, summary=run.summary)
-            self.last_status = "success" if run.successful() else "partial"
-            if not run.successful() or run.costs()["details"]:
+            handled = run.resolve_pending(request) if interactive else False
+            if run.resume_writer:
+                self.fonctions["writer_agent"](**run.resume_writer)
+            if handled:
+                response = run.turn_summary("Validation enregistrée.")
+            else:
+                response = super().run(encode(run.conversation_context(messages)) if interactive else request, counters=run.counters,
+                                       completed=lambda: run.complete() and not run.can_repair(),
+                                       validate=run.validate_final, summary=run.turn_summary if interactive else run.summary)
+            self.last_status = ("waiting" if self.event_data["pending_input"] else
+                                "success" if run.successful() or (interactive and run.direct_reply is not None) else "partial")
+            if not interactive and (not run.successful() or run.costs()["details"]):
                 response = run.summary(self.last_reason or "Certaines tâches n'ont pas abouti.")
             trace.tracer(self.name, "INFO", f"État : {self.last_status}", **run.counters)
             return response
