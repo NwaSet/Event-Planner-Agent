@@ -1,55 +1,117 @@
-"""Point d'entrée terminal : une demande, une exécution, puis arrêt."""
+"""Menu terminal : nouvelles exécutions indépendantes et historique en lecture seule."""
 
-from model import llm, trace
-from model.event_orchestrator import create_orchestrator
+import argparse
+import subprocess
+import sys
+from pathlib import Path
+
+from rich.table import Table
+from rich.text import Text
+
+from controller.event_controller import run_conversation
+from dao.conversation_dao import ConversationError, list_conversations, load_conversation
+from model import trace
+from view.view import display_conversation
 
 
-def main() -> int:
+STATUS_LABELS = {"running": "Non finalisée", "completed": "Terminée", "partial": "Partielle",
+                 "refused": "Validation refusée", "error": "Erreur", "interrupted": "Interrompue"}
+EXIT_CODES = {"completed": 0, "partial": 2, "refused": 2, "error": 1, "interrupted": 130}
+
+
+def show_result(conversation):
+    status = conversation["status"]
+    color = "green" if status == "completed" else "red" if status == "error" else "yellow"
+    trace.surrond(conversation["messages"][-1]["content"], STATUS_LABELS[status], color)
+
+
+def show_history(directory=None):
+    history = list_conversations(directory)
+    for error in history["errors"]:
+        trace.surrond(error["file"] + " : " + error["error"], "Conversation illisible", "yellow")
+    entries = history["conversations"]
+    if not entries:
+        trace.surrond("Aucune conversation consultable.", "Historique", "cyan")
+        return
+    table = Table(title="Conversations précédentes")
+    for label in ("N°", "Titre", "Création", "Statut", "Identifiant"):
+        table.add_column(label)
+    for index, entry in enumerate(entries, 1):
+        table.add_row(str(index), Text(entry["title"]), entry["created_at"],
+                      STATUS_LABELS[entry["status"]], entry["conversation_id"])
+    trace.console.print(table)
+    while True:
+        choice = trace.console.input("Conversation à consulter (0 = retour) > ").strip()
+        if choice == "0":
+            return
+        if choice.isdecimal() and 1 <= int(choice) <= len(entries):
+            conversation = load_conversation(entries[int(choice) - 1]["conversation_id"], directory)
+            display_conversation(conversation, trace.console)
+            trace.console.input("Entrée pour revenir au menu principal > ")
+            return
+        trace.surrond("Choisissez un numéro de la liste ou 0.", "Choix invalide", "yellow")
+
+
+def main(*, directory=None) -> int:
+    exit_code = 0
     try:
-        trace.title("Event Planner Agent")
-
-        probleme = llm.verifier_configuration()
-        if not llm.BASE_URL.strip() or not llm.MODELE.strip():
-            probleme = "Renseignez LLM_BASE_URL et LLM_MODEL dans le fichier .env."
-        if probleme:
-            trace.surrond(probleme, "Configuration du LLM", "red")
-            return 1
-
-        trace.surrond(
-            "Décrivez votre événement, puis appuyez sur Entrée.\n"
-            "Une seule demande sera traitée. Aucun historique de conversation n'est repris.\n"
-            "Si un email est préparé, sa validation vous sera demandée dans ce terminal.",
-            "Votre demande",
-            "cyan",
-        )
-        demande = trace.console.input("Votre événement > ").strip()
-        if not demande:
-            trace.tracer("Application", "INFO", "Demande vide : aucune exécution.")
-            return 0
-
-        llm.nouvelle_demande()
-        orchestrateur = create_orchestrator()
-        trace.tracer("Application", "INFO", "Traitement de votre demande en cours...")
-        reponse = orchestrateur.run(demande)
-        if getattr(orchestrateur, "last_status", None) == "partial":
-            trace.surrond(reponse, "Résultat partiel", "yellow")
-            return 2
-        trace.surrond(reponse or "L'orchestrateur n'a retourné aucun texte.", "Résultat", "green")
-        return 0
-
+        while True:
+            trace.title("Event Planner Agent")
+            trace.console.print("1. Nouvelle conversation\n2. Historique des conversations\n3. Quitter")
+            choice = trace.console.input("Votre choix > ").strip()
+            if choice == "3":
+                return exit_code
+            try:
+                if choice == "2":
+                    show_history(directory)
+                elif choice == "1":
+                    trace.surrond("Décrivez votre événement. Cette nouvelle demande sera sauvegardée.\n"
+                                  "Les validations du plan et des emails restent demandées dans le terminal.",
+                                  "Nouvelle conversation", "cyan")
+                    request = trace.console.input("Votre événement > ")
+                    if not request.strip():
+                        trace.surrond("Demande vide : aucune exécution.", "Nouvelle conversation", "yellow")
+                        continue
+                    conversation = run_conversation(request, directory=directory)
+                    show_result(conversation)
+                    trace.surrond(conversation["conversation_id"], "Conversation sauvegardée", "cyan")
+                    exit_code = EXIT_CODES[conversation["status"]]
+                    if exit_code == 130:
+                        return exit_code
+                else:
+                    trace.surrond("Choisissez 1, 2 ou 3.", "Choix invalide", "yellow")
+            except ConversationError as error:
+                if error.conversation is not None:
+                    show_result(error.conversation)
+                trace.surrond(str(error), "Erreur de conversation — sauvegarde/lecture non confirmée", "red")
+                exit_code = 1
     except EOFError:
         trace.tracer("Application", "INFO", "Saisie fermée : arrêt du programme.")
-        return 0
+        return exit_code
     except KeyboardInterrupt:
         trace.tracer("Application", "INFO", "Exécution interrompue par l'utilisateur.")
         return 130
-    except llm.ErreurLLM as erreur:
-        trace.surrond(str(erreur), "Erreur du LLM", "red")
-        return 1
-    except Exception as erreur:
-        trace.surrond(f"{type(erreur).__name__} : {erreur}", "Erreur d'exécution", "red")
-        return 1
+
+
+def launch(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="Event Planner Agent — console Rich")
+    parser.add_argument("--current-console", action="store_true",
+                        help="Utiliser le terminal actuel au lieu d'ouvrir une nouvelle console Windows.")
+    options = parser.parse_args(argv)
+    if sys.platform == "win32" and not options.current_console:
+        script = Path(__file__).resolve()
+        try:
+            # Même interpréteur/venv ; le marqueur évite une ouverture récursive de fenêtres.
+            return subprocess.run([sys.executable, str(script), "--current-console"],
+                                  cwd=script.parent, creationflags=subprocess.CREATE_NEW_CONSOLE).returncode
+        except OSError:
+            trace.surrond("Impossible d'ouvrir la console Windows. Relancez avec --current-console.",
+                          "Erreur de lancement", "red")
+            return 1
+        except KeyboardInterrupt:
+            return 130
+    return main()
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(launch())

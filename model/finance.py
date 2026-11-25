@@ -105,9 +105,20 @@ def financial_lines(costs):
             if detail["vat"] is not None:
                 lines.append(f"TVA au taux fourni de {detail['vat_rate'] * 100:g} % : {euros(detail['vat'])} ; "
                              f"prestataire : {euros(detail['known_ttc'])} TTC sur les postes connus.")
+            else:
+                lines.append("TVA du prestataire inconnue : les montants HT sont exclus du sous-total TTC.")
     if costs["details"]:
-        lines.append(f"Sous-total des postes TTC connus : {euros(costs['known_ttc_subtotal'])}, hors caution et frais non chiffrés.")
-        lines.append(f"Somme connue à mobiliser, caution comprise : {euros(costs['known_cash_required'])}.")
+        has_ttc = any(key.endswith("_ttc") for key in costs["known"])
+        incomplete = bool(costs["missing"])
+        if has_ttc:
+            qualifier = " (partiel)" if incomplete else ""
+            lines.append(f"Sous-total des postes TTC connus{qualifier} : {euros(costs['known_ttc_subtotal'])}, hors caution et frais non chiffrés.")
+            lines.append(f"Somme{' partielle' if incomplete else ' connue'} à mobiliser sur ces seuls postes, caution comprise : "
+                         f"{euros(costs['known_cash_required'])}.")
+        else:
+            lines.append("Aucun sous-total TTC calculable sur les postes sélectionnés.")
+        if incomplete or not has_ttc:
+            lines.append("Coût TTC total : non déterminable avec les informations disponibles.")
         lines.extend(costs["missing"])
         if costs["known_over_budget"]:
             lines.append("Attention : les seuls postes TTC connus dépassent déjà le budget plafond.")

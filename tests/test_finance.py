@@ -3,7 +3,7 @@ from copy import deepcopy
 import pytest
 
 from model.event_state import EventRun
-from model.finance import venue_cost, catering_cost, provider_cost
+from model.finance import venue_cost, catering_cost, provider_cost, financial_lines, euros
 from model.agents.search import load_catalogs, search_candidates
 
 
@@ -68,3 +68,43 @@ def test_subtotal_never_adds_unknown_vat_ht_to_ttc_or_deposit_to_expenses():
 def test_invalid_financial_inputs_are_rejected(field, value):
     with pytest.raises(ValueError):
         EventRun("test").remember({field: value})
+
+
+def test_provider_only_unknown_vat_and_travel_never_displays_a_zero_total():
+    run = EventRun("Prestataire")
+    run.event_data["providers"] = [{"id": "005", "kit_id": 1}]
+    costs = run.costs()
+    before = deepcopy(costs)
+    output = "\n".join(financial_lines(costs))
+    assert euros(costs["known"]["provider_ht"]) + " HT" in output
+    assert "TVA du prestataire inconnue" in output and "exclus du sous-total TTC" in output
+    assert "Kilométrage facturable et nombre de véhicules" in output
+    assert "Aucun sous-total TTC calculable" in output
+    assert "Coût TTC total : non déterminable" in output
+    assert "mobiliser" not in output and ": 0,00 EUR" not in output
+    assert costs == before and costs["known_ttc_subtotal"] == 0  # calculs inchangés
+
+
+def test_mixed_ht_ttc_cash_and_deposit_are_explicitly_partial():
+    run = EventRun("Salle et prestataire")
+    run.remember({"rental_period": "soiree"})
+    run.event_data["venue"] = {"id": "salle_001"}
+    run.event_data["providers"] = [{"id": "005", "kit_id": 1}]
+    costs = run.costs()
+    output = "\n".join(financial_lines(costs))
+    assert "Sous-total des postes TTC connus (partiel) : " + euros(costs["known"]["venue_ttc"]) in output
+    assert "Caution remboursable : 600,00 EUR, hors dépense" in output
+    assert "Somme partielle à mobiliser sur ces seuls postes, caution comprise : 3 025,00 EUR" in output
+    assert "Coût TTC total : non déterminable" in output
+    assert costs["known_ttc_subtotal"] == 2425 and costs["deposit"] == 600
+
+
+def test_known_provider_vat_still_reports_unknown_travel_and_partial_ttc():
+    run = EventRun("Prestataire")
+    run.remember({"provider_vat_rate": .21})
+    run.event_data["providers"] = [{"id": "005", "kit_id": 1}]
+    output = "\n".join(financial_lines(run.costs()))
+    assert "TVA au taux fourni de 21 %" in output
+    assert "Sous-total des postes TTC connus (partiel)" in output
+    assert "Coût TTC total : non déterminable" in output
+    assert "Kilométrage" in output

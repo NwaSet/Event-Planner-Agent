@@ -62,6 +62,8 @@ Rules:
 Email validation:
 - After drafting an email, ALWAYS call ask_user() to request user approval.
 - Present the complete email to the user for validation.
+- Pass only the complete draft in ask_user(message), without an introduction or a validation question; Python asks yes/no.
+- Python preserves that exact message and the approval status, then ends this delegation without another LLM call.
 - In this one-shot application, stop on refusal. Do not ask for the same approval again.
 - Return the exact approved draft unchanged; a refusal is never an approval.
 - Never consider an email finalized without explicit user approval.
@@ -102,6 +104,9 @@ Rules:
 - Handle events that end after midnight with the next day's date in end; end must be later than start.
 - Never guess the weekday of a date; use get_next_day() when needed.
 - Do not assume access to the internet or external calendars.
+- Use get_meteo only when weather can inform scheduling or the indoor/covered/outdoor venue choice, or when explicitly requested.
+- Consult only a known city and a useful date within the next 16 days (today included). Do not repeat a city/date query.
+- Python shares the verified observation with venue selection. If unavailable or outside the horizon, continue without inventing a forecast.
 - Do not claim to have verified venue, provider, or participant availability.
 - Do not invent confirmed reservations.
 - If constraints cannot be satisfied, clearly indicate the conflict.
@@ -147,11 +152,14 @@ Rules:
 - Evaluate the returned options and select the one that best matches the request.
 - Prioritize the user's explicit requirements over general preferences.
 - Consider overall suitability rather than selecting only by price.
+- When weather is provided for the venue city and date, consider an indoor or covered option for cold, rain or wind, using catalogue equipment and space types.
+- Weather is a forecast, not a guarantee. It never overrides capacity, event prohibitions, budget, location, hours or other mandatory constraints. An unavailable observation supplies no forecast.
 - Use only information returned by the tool.
 - Never invent, modify, or assume missing database information.
 - Do not call unrelated tools or retrieve unnecessary data.
 - Do not call the same tool multiple times unless necessary.
 - Never relax mandatory constraints. no_match or invalid_filters is an explicit conflict.
+- location_search indicates an explicit fallback to the requested city's province after no compatible city result. Keep the provided province and all other mandatory filters; never search all Belgium or invent travel times. Report the selected venue's actual commune.
 - For an impossible task return {"error": "specific conflict"}.
 - Consider included venue equipment; avoid redundant services unless requested.
 - Dates and catalogue entries do not establish availability or confirmed reservations.

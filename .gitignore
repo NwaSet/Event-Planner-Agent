@@ -1,4 +1,8 @@
 # Byte-compiled / optimized / DLL files
+# Conversations locales personnelles (y compris fichiers temporaires atomiques).
+data/conversations/*
+!data/conversations/.gitkeep
+
 __pycache__/
 *.py[codz]
 *$py.class

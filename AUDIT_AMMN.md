@@ -1,3 +1,49 @@
+# Audit AMMN — suivi des corrections
+
+## Quatre corrections après le test réel étudiant — 25 novembre 2026
+
+La trace `eabe7b9b` et la demande jointe ont été examinées. Le journal principal confirme `requirements.tasks` en double puis une correction au tour suivant, l'appel Planning à `get_meteo` et le planning du 5 décembre 2026, de 22 h à 4 h le lendemain. Les valeurs météo et la sélection B-Sound Events sont rapportées par l'utilisateur ; ce journal LLM ne contient pas la réponse API. Aucun nouvel essai réel n'a été exécuté par Codex.
+
+| Point | Correction vérifiée en simulation | Limite |
+|---|---|---|
+| Délégations | Python récupère `requirements.tasks` uniquement si la liste est valide et compatible avec celle du niveau supérieur. L'ordre ne compte pas ; des listes contradictoires restent une erreur. Schéma et prompt clarifiés, autres validations strictes conservées. | La normalisation ne corrige pas des contraintes métier ambiguës. |
+| Finance | Les montants HT sans TVA restent séparés des TTC. Sous-total et somme à mobiliser explicitement partiels ; caution hors dépense ; frais inconnus signalés. Sans TTC calculable, aucun faux total à zéro. | Seule `financial_lines()` change ; formules, plafonds et arrondis inchangés. Le devis reste à confirmer. |
+| Météo / Case File | Le résultat validé de l'outil actuel est conservé dans `event_data.weather` : ville demandée, date, source, statut `available`/`unavailable`, prévision compacte ou erreur. Déduplication par ville/date/run. Transmission au choix de salle uniquement pour la ville/date correspondantes ; résumé dans le bilan. | Aucune consultation systématique ; Planning décide de l'utilité. Hors horizon et panne API ne donnent aucune prévision. La météo de Namur n'est pas présentée comme celle de Dinant. |
+| Localisation | `requirements.location_scope` distingue `city` et `province_fallback`. En mode souple, recherche de ville d'abord, puis même province seulement sans résultat compatible. `event_data.location_search` conserve la ville souhaitée, la province explorée et la limite administrative annoncée. | Le catalogue ne contient que commune/province, sans voisinage ni coordonnées. Une province ne garantit pas une proximité ; aucun rayon, temps de trajet ou repli national inventé. |
+
+Les cinq agents, ReAct, `as_tool()`, les validations humaines P0 et le fonctionnement one-shot restent en place. Python prépare et vérifie les candidats ; le Decision-Making Agent conserve le choix qualitatif. La météo peut favoriser un espace couvert/intérieur via le prompt et les équipements du catalogue, sans jamais assouplir une contrainte obligatoire. Aucun nouveau service externe, agent ou workflow fixe. Aucun écart architectural supplémentaire identifié par inspection et simulation ; la conformité complète en situation réelle n'est pas démontrée.
+
+**Tests par étape, dans l'ordre demandé :** 157 tests orchestration/filtres ; 162 finance/présentation/orchestration ; 304 météo/outils/orchestration/présentation ; 188 géographie/filtres/orchestration/présentation. Suite finale : **360 tests réussis**, soit 41 cas supplémentaires depuis les 319 tests P0. Réseau bloqué par les fixtures, aucun appel LLM réel ou payant. Un test d'intégration partielle a nécessité de corriger son simulateur pour appeler `get_providers` avant de choisir ; les assertions finales vérifient le prestataire, le kit et le coût exacts.
+
+L'intégration étudiante vérifie le 5 décembre à 22 h → 6 décembre à 4 h et deux issues : salle compatible à Dinant, avec respect des fournisseurs imposés ; ou aucun candidat dans la zone étendue (catalogue réduit uniquement dans le test), avec B-Sound Events, kit 6, à **3 000 EUR HT**, TVA et déplacements inconnus, bilan partiel cohérent. B-Sound n'est pas imposé à la salle de Dinant, qui n'autorise que les prestataires `010` et `012`.
+
+**Appels mesurés en simulation :** 7 appels LLM et 3 délégations pour l'issue avec salle ; 8 appels et 2 délégations effectives pour l'issue partielle, dont la recherche autonome du prestataire. La correction de structure ne consomme aucun appel LLM ; la consultation météo produit seulement un géocodage et une prévision HTTP simulés, même si la même demande est répétée. L'élargissement est une recherche locale Python. Les tokens réels après correction ne sont pas mesurés : le contexte météo et les précisions des prompts ajoutent du texte, sans permettre de chiffrer un gain net fournisseur.
+
+`git diff --check` sans erreur. Catalogues, journaux existants (y compris le fichier de conflit), corrections P0 et fichiers non concernés conservés. Aucun commit, reset ni indexation. Les sections documentaires précédentes ont aussi retrouvé leurs accents UTF-8, dégradés lors de leur écriture initiale.
+
+**Encore non validé avec un véritable LLM après ces quatre corrections :** extraction de toutes les formulations, pertinence qualitative de la sélection selon météo, comportement des fournisseurs et consommation réelle. Les expressions géographiques reconnues par Python sont ciblées ; les autres formulations relèvent du Supervisor et de ses paramètres structurés. L'état météo est limité au run ; il ne remplace pas un contrôle de proximité ou une prévision pour une autre commune. Les dates au-delà de l'horizon restent sans météo. Les documents multiples et les révisions après refus restent hors périmètre.
+
+La ligne météo non partagée de l'audit initial est donc corrigée en simulation. Le lien reste Planning → outil actuel → état partagé → Decision-Making ; aucun accès météo direct n'est ajouté à Decision-Making, conformément au rôle confié à Planning par la fiche. La différence avec le lien direct dessiné dans le schéma reste explicitée.
+
+## Corrections P0 précédentes — preuves conservées
+
+Les deux P0 ont été corrigés et vérifiés en simulation le 25 novembre 2026, avant les quatre corrections ci-dessus. La note historique de 68/100 n'est pas recalculée ; elle décrit l'état de l'audit initial, pas une certification actuelle.
+
+- **P0.1 :** après `ask_user()`, Writer termine sur `approval.content`, sans restitution LLM. Le texte exact et `approved` sont conservés dans `event_data.documents`, y compris sur refus. Aucun envoi. Replay des deux réponses Writer de la trace `52c0c76e` : un seul appel Writer, réponse de réécriture non consommée, salle conservée. Espaces initiaux/finaux, tabulations, CRLF, espaces insécables, ponctuation et fautes sont préservés. Le test qui attendait une erreur après réécriture vérifie désormais la conservation. La fixture `tests/fixtures/writer_52c0c76e.json` rend le replay indépendant du journal courant ; la réponse humaine reste simulée, car elle n'est pas journalisée.
+- **P0.2 :** avant Writer pour un email, Python attend les tâches annoncées du plan, présente le bilan et demande l'accord via `ask_user()`. `event_data.plan_approval` conserve le texte présenté, une copie du plan et `approved`. Accord → Writer puis validation individuelle distincte ; refus → plan conservé, statut explicite, zéro appel Writer et zéro email généré. Le refus est terminal même sans liste `tasks` ou après redélégation. Un accord ne peut être réutilisé pour un autre plan. Aucun nouvel accord du même brouillon n'est exécuté dans un même lot d'outils.
+- Les statuts du plan et du brouillon sont visibles. Sans validation individuelle, aucun brouillon n'est enregistré comme approuvé. Cette barrière ne s'ajoute pas aux simples recherches ni aux synthèses seules. Les cinq agents, ReAct, `as_tool()`, finances et one-shot sont conservés.
+- Vérifications P0 : **138 tests ciblés**, puis **319 tests complets**, quinze nouveaux cas inclus. Commandes : `.\.venv\Scripts\python.exe -m pytest tests/test_orchestration.py tests/test_presentation.py -q -p no:cacheprovider`, puis `.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider`. Aucun réseau, LLM payant ni email envoyé. Les premiers essais bloqués par les permissions temporaires Windows ont été relancés avec accès autorisé hors bac à sable. `git diff --check` sans erreur.
+- Lors de la correction P0, aucun catalogue, fichier financier ou journal n'avait été modifié ; les changements antérieurs de `To Do.md` avaient été conservés et l'audit, alors supprimé, rétabli depuis Git. Aucun commit, reset ni indexation.
+- Restent à vérifier en réel : qualité des choix et du brouillon, extraction exhaustive des tâches/contraintes, comportement et consommation fournisseur. Les P1/P2 non traités restent ouverts : documents multiples, rôle du rapport Writer, consommation et éventuelle révision après refus. La météo, encore ouverte à cette étape P0, est traitée ci-dessus. Disponibilités, coordonnées et devis réels restent à confirmer.
+- Prochain essai réel, uniquement sur autorisation explicite : anniversaire/devis, ordre plan → accord → Writer → accord du brouillon, puis refus du plan et du brouillon. Comparer le texte soumis à celui enregistré. Aucun tel essai n'a été lancé par Codex.
+
+---
+
+## Audit initial conservé — état avant les correctifs ci-dessus
+
+Les constats, propositions et la note ci-dessous sont historiques. Les mentions « absent » et « non implémentée » concernant les P0 et le partage météo sont remplacées par les preuves et limites ci-dessus.
+
+
 # Audit de conformité AMMN — Event-Planner-Agent
 
 Date : 25 novembre 2026. **Note de conformité : 68/100.** L'architecture multi-agents annoncée existe ; les principaux écarts concernent les validations humaines, la conservation du brouillon approuvé et la transmission de la météo. Une refonte n'est pas nécessaire.

@@ -15,6 +15,8 @@ from .agents.search import (CATALOGS, check_schedule, compact_tool, load_catalog
 TASKS = ("planning", "budget", "venue", "catering", "provider", "documents")
 REQUIREMENT_PROPERTIES = {
     "city": {"type": "string"}, "province": {"type": "string"},
+    "location_scope": {"type": "string", "enum": ["city", "province_fallback"],
+                       "description": "city par défaut/ville imposée ; province_fallback seulement pour une localisation explicitement souple, ville d'abord puis même province faute de données de voisinage."},
     "event_type": {"type": "string", "description": "Catégorie précise du catalogue seulement."},
     "guests": {"type": "integer", "minimum": 1},
     "budget_total": {"type": ["number", "null"], "minimum": 0},
@@ -80,7 +82,8 @@ class EventRun:
     def __init__(self, request, max_llm_calls=24, max_delegations=8):
         self.event_data = {"request": request, "requirements": {}, "planning": None,
                            "budget": None, "venue": None, "catering": None,
-                           "providers": [], "documents": [], "tasks": {}}
+                           "providers": [], "documents": [], "tasks": {}, "plan_approval": None, "weather": [],
+                           "location_search": None}
         self.catalogs = load_catalogs()
         # Garde-fou ciblé : conserver une catégorie explicitement nommée dans la demande.
         # Les autres interprétations et les choix qualitatifs restent confiés aux agents.
@@ -98,6 +101,16 @@ class EventRun:
                      and not re.search(r"\b(?:pas|sauf)\s+a\s+" + re.escape(tools._normalize(city)) + r"\b", wording)]
         if len(mentioned) == 1:
             req["city"] = mentioned[0]
+        locations = []
+        for city in cities:
+            name = re.escape(tools._normalize(city)) + r"\b"
+            strict = re.search(r"\b(?:uniquement a |obligatoirement (?:dans la commune de |a )|pas en dehors de )" + name, wording)
+            soft = re.search(r"\b(?:dans le coin de |autour de |pres de |dans les environs de )" + name, wording)
+            negated = re.search(r"\b(?:pas |sans )(?:dans le coin de |autour de |pres de |dans les environs de )" + name, wording)
+            if strict or (soft and not negated):
+                locations.append((city, "city" if strict else "province_fallback"))
+        if len(locations) == 1 and ("city" not in req or req["city"] == locations[0][0]):
+            req["city"], req["location_scope"] = locations[0]
         headcounts = re.findall(r"\b(?:pour|de)\s+(\d+)\s+(?:personnes|invites|participants)\b", wording)
         if len(set(headcounts)) == 1 and int(headcounts[0]) > 0:
             req["guests"] = int(headcounts[0])
@@ -123,6 +136,15 @@ class EventRun:
             return
         if requirements is None:
             requirements = {}
+        if isinstance(requirements, dict) and "tasks" in requirements:
+            nested = requirements["tasks"]
+            if not isinstance(nested, list) or not nested or any(task not in TASKS for task in nested):
+                raise ValueError("requirements.tasks : liste non vide de tâches connues attendue.")
+            if tasks is not None and (not isinstance(tasks, list) or any(task not in TASKS for task in tasks)
+                                      or set(tasks) != set(nested)):
+                raise ValueError("Listes tasks contradictoires entre la délégation et requirements.")
+            tasks = nested if tasks is None else tasks
+            requirements = {key: value for key, value in requirements.items() if key != "tasks"}
         if tasks is not None and (not isinstance(tasks, list) or not tasks or any(task not in TASKS for task in tasks)):
             raise ValueError("tasks : liste non vide de tâches connues attendue.")
         # Une erreur locale ne doit pas faire oublier les autres tâches annoncées.
@@ -323,10 +345,14 @@ class EventRun:
             if req.get("rental_period"):
                 filters.setdefault("rental_period", req["rental_period"])
             for field in ("city", "province"):
+                if field == "city" and self.event_data["location_search"] and self.event_data["location_search"]["expanded"]:
+                    continue  # La ville souhaitée reste dans requirements ; les filtres effectifs sont provinciaux.
                 if field in req:
                     if field in filters and tools._normalize(filters[field]) != tools._normalize(req[field]):
                         raise ValueError(f"Lieu contradictoire : {field}.")
                     filters[field] = req[field]
+            if self.event_data["location_search"] and self.event_data["location_search"]["expanded"]:
+                filters.setdefault("province", self.event_data["location_search"]["province"])
         venue = self.selected_row("venue")
         if task == "catering" and not venue:
             province = req.get("province")
@@ -342,7 +368,9 @@ class EventRun:
         if total is not None and self.event_data["budget"]:
             allocated = round(total * self.event_data["budget"][task], 2)
             filters["max_budget"] = min(filters.get("max_budget", allocated), allocated)
+        weather = self.relevant_weather(filters.get("city")) if task == "venue" else None
         return {"filters": filters, "planning": self.event_data["planning"], "date": req.get("date"),
+                **({"weather": weather} if weather else {}),
                 "financial": {key: req[key] for key in FINANCIAL_FIELDS if key.startswith(task + "_") and key in req},
                 "request": self.event_data["request"],
                 "venue": venue if task != "venue" else None, "today": self.today,
@@ -371,9 +399,33 @@ class EventRun:
                 return False
         return True
 
+    def search_options(self, task, filters, context, accept=None):
+        result = search_candidates(task, filters, catalogs=self.catalogs, context=context, accept=accept)
+        req = self.event_data["requirements"]
+        if (task != "venue" or result["status"] != "no_match"
+                or req.get("location_scope") != "province_fallback" or not filters.get("city")):
+            return result
+        # Les catalogues ne décrivent pas le voisinage : même province, jamais un rayon inventé.
+        provinces = {row["lieux"]["province"] for row in self.catalogs["venue"]
+                     if tools._normalize(row["lieux"]["commune"]) == tools._normalize(filters["city"])}
+        if len(provinces) != 1:
+            return result
+        province = provinces.pop()
+        if filters.get("province") and tools._normalize(filters["province"]) != tools._normalize(province):
+            return result
+        expanded = {key: value for key, value in filters.items() if key != "city"}
+        expanded["province"] = province
+        self.event_data["location_search"] = {
+            "requested_city": filters["city"], "expanded": True, "province": province,
+            "basis": "Même province du catalogue ; proximité et temps de trajet non établis."}
+        return search_candidates(task, expanded, catalogs=self.catalogs, context=context, accept=accept)
+
     def delegate(self, agent, demande, task, *, requirements=None, tasks=None):
         if task not in TASKS:
             return {"status": "error", "error": "Catégorie de tâche inconnue."}
+        if self.plan_refused():
+            return {"status": "reused", "task": task, "outcome": "refused",
+                    "reason": "Plan global refusé ; génération des emails arrêtée."}
         try:
             self.remember(requirements, tasks)
         except (ValueError, TypeError, KeyError, TaskImpossible) as error:
@@ -391,6 +443,12 @@ class EventRun:
             if reused:
                 return reused
             return self.record(task, {"status": "blocked", "error": "Email bloqué : aucune salle sélectionnée ; destinataire inconnu."})
+        is_email = task == "documents" and self.event_data["requirements"].get("document_kind") == "email"
+        if is_email:
+            pending = [name for name, outcome in self.event_data["tasks"].items()
+                       if name != "documents" and outcome["status"] == "pending"]
+            if pending:
+                return {"status": "not_ready", "task": task, "requires": pending[0]}
         if task == "budget" and self.event_data["requirements"].get("budget_total") is None:
             return self.record(task, {"status": "skipped", "reason": "Aucun plafond connu : répartition inutile."})
         # Seul un plafond connu exige une répartition avant les achats multiples.
@@ -417,6 +475,11 @@ class EventRun:
             return reused
         if self.counters["delegations"] >= self.counters["max_delegations"]:
             return self.record(task, {"status": "limit", "error": "Limite globale de délégations atteinte."})
+        if is_email:
+            if not self.approve_plan():
+                return self.record(task, {"status": "refused",
+                    "error": "Plan global refusé ; génération des emails arrêtée. Aucun email généré ni envoyé."})
+            context = self.context(task)
         payload = {"task": task, "demande": demande, **context}
         original_functions, original_schemas = agent.fonctions, agent.schemas
         approval = {}
@@ -424,8 +487,13 @@ class EventRun:
             accept = self.services_available if task == "venue" else None
             # Sans filtre explicite, le spécialiste extrait les critères de la demande
             # avec son outil avant de sélectionner ; pas de catalogue arbitraire injecté.
-            result = (search_candidates(task, context["filters"], catalogs=self.catalogs, context=context, accept=accept)
+            result = (self.search_options(task, context["filters"], context, accept)
                       if context["filters"] or context.get("venue") else {"status": "needs_search", "candidates": []})
+            if task == "venue" and self.event_data["location_search"]:
+                context["filters"] = dict(result.get("filters", context["filters"]))
+                payload["filters"] = context["filters"]
+                payload["location_search"] = deepcopy(self.event_data["location_search"])
+                payload.pop("weather", None)  # La prévision de la ville initiale ne vaut pas pour une autre commune.
             if result["status"] not in ("matched", "needs_search"):
                 if task == "venue" and result["status"] == "no_match":
                     result["error"] = ("Aucune salle compatible avec les contraintes obligatoires ("
@@ -446,7 +514,9 @@ class EventRun:
                 requested = {**context["filters"], **extra}
                 if result["candidates"] and {"limit": 5, **requested} == {"limit": 5, **context["filters"]}:
                     return {"status": "reused", "source": "search.candidates dans le contexte initial"}
-                found = search_candidates(task, requested, catalogs=self.catalogs, context=context, accept=accept)
+                found = self.search_options(task, requested, context, accept)
+                if task == "venue" and self.event_data["location_search"]:
+                    found["location_search"] = deepcopy(self.event_data["location_search"])
                 # Une recherche corrigée remplace les anciens candidats : ils peuvent
                 # ne plus respecter le type, la capacité ou les exclusions précisés.
                 proposed[:] = found["candidates"]
@@ -471,6 +541,7 @@ class EventRun:
                         raise ValueError("Offre absente des offres compatibles proposées ou type d'identifiant incorrect.")
         elif task == "planning":
             validate = self.validate_planning
+            agent.fonctions = {**original_functions, "get_meteo": self.observe_weather}
         elif task == "budget":
             validate = self.validate_budget
         else:
@@ -486,17 +557,19 @@ class EventRun:
                 if self.event_data["requirements"].get("document_kind") == "email":
                     if not approval:
                         raise ValueError("Présentez le brouillon complet avec ask_user avant de conclure.")
-                    if approval["approved"] and text.strip() != approval["content"].strip():
+                    if text != approval["content"]:
                         raise ValueError("Le texte final doit être exactement le brouillon approuvé.")
         self.counters["delegations"] += 1
-        is_email = task == "documents" and self.event_data["requirements"].get("document_kind") == "email"
         try:
             output = agent.run(encode(payload), counters=self.counters, validate=validate,
                                completed=(lambda: bool(approval)) if is_email else None,
+                               completed_output=(lambda: approval.get("content")) if task == "documents" else None,
                                compact_output=task in CATALOGS and bool(proposed))
-            if task == "documents" and approval and not approval["approved"]:
-                outcome = {"status": "refused", "error": "Brouillon d'email refusé ; aucun envoi.",
-                           "result": {"content": approval["content"], "approved": False}}
+            if task == "documents" and approval:
+                outcome = {"status": "success" if approval["approved"] else "refused",
+                           "result": {"content": approval["content"], "approved": approval["approved"]}}
+                if not approval["approved"]:
+                    outcome["error"] = "Brouillon d'email refusé ; aucun envoi."
             elif agent.last_status != "success":
                 outcome = {"status": "error", "error": getattr(agent, "last_reason", "Aucun résultat valide."),
                            "code": agent.last_error_code or "incomplete"}
@@ -537,7 +610,32 @@ class EventRun:
         self.event_data["tasks"][task] = {"status": "pending"}
         return None
 
+    def observe_weather(self, day, city):
+        """Conserver le résultat de l'outil actuel, une seule consultation par ville/date/run."""
+        city = city.strip() if isinstance(city, str) else city
+        for observation in self.event_data["weather"]:
+            if observation["date"] == day and str(observation["city"]).casefold() == str(city).casefold():
+                return deepcopy(observation)
+        result = tools.get_meteo(day=day, city=city)
+        observation = {"city": city, "date": day, "source": "Open-Meteo"}
+        if "error" in result:
+            observation.update(status="unavailable", code=result.get("code"), error=result["error"])
+        else:
+            observation.update(status="available", resolved_city=result["city"], country=result.get("country"),
+                               forecast={key: result[key] for key in tools.WEATHER_FIELDS})
+        self.event_data["weather"].append(observation)
+        return deepcopy(observation)
+
+    def relevant_weather(self, city):
+        planning = self.event_data["planning"]
+        day = planning["start"][:10] if planning else self.event_data["requirements"].get("date")
+        return next((deepcopy(item) for item in self.event_data["weather"]
+                     if day and city and item["date"] == day and isinstance(item["city"], str)
+                     and tools._normalize(item["city"]) == tools._normalize(city)), None)
+
     def can_repair(self):
+        if self.plan_refused():
+            return False
         return any(outcome.get("retryable", False) and self.attempts.get(task, {}).get("count", 0) < 2
                    for task, outcome in self.event_data["tasks"].items())
 
@@ -555,7 +653,7 @@ class EventRun:
             self.event_data[field] = [outcome["result"]] if field in ("providers", "documents") else outcome["result"]
             if task in CATALOGS:
                 outcome["details"] = self.selection_details(task)
-        elif task == "documents" and outcome["status"] == "refused":
+        elif task == "documents" and outcome["status"] == "refused" and "result" in outcome:
             self.event_data["documents"] = [outcome["result"]]
         return outcome
 
@@ -581,7 +679,29 @@ class EventRun:
 
     def complete(self):
         # Sans liste annoncée, le Supervisor reste libre de déléguer une autre tâche.
-        return self.scope_declared and self.settled()
+        return self.plan_refused() or ((self.scope_declared or self.event_data["plan_approval"] is not None)
+                                       and self.settled())
+
+    def plan_refused(self):
+        approval = self.event_data["plan_approval"]
+        return approval is not None and approval["approved"] is False
+
+    def approve_plan(self):
+        """Présenter le bilan Python avant Writer ; l'accord porte sur ce plan précis."""
+        plan = self.consolidated()
+        for field in ("plan_approval", "documents"):
+            plan.pop(field)
+        plan["tasks"].pop("documents", None)
+        previous = self.event_data["plan_approval"]
+        if previous and previous["plan"] == plan:
+            return previous["approved"]
+        self.event_data["plan_approval"] = None
+        content = ("Plan global proposé avant rédaction des emails\n\n"
+                   + self.summary("Plan à valider avant rédaction des emails.")
+                   + "\n\nApprouvez-vous ce plan global et autorisez-vous la génération des brouillons d'emails ?")
+        approved = tools.ask_user(content)["approved"]
+        self.event_data["plan_approval"] = {"content": content, "plan": plan, "approved": approved}
+        return approved
 
     def validate_final(self, text):
         if not self.settled():
@@ -645,6 +765,14 @@ class EventRun:
 
     def summary(self, reason):
         lines = ["Résultat " + ("consolidé." if self.successful() else "partiel. " + reason)]
+        approval = self.event_data["plan_approval"]
+        if approval:
+            lines.append("Plan global approuvé." if approval["approved"] else
+                         "Plan global refusé ; génération des emails arrêtée.")
+        location = self.event_data["location_search"]
+        if location:
+            lines.append(f"Aucune salle compatible à {location['requested_city']} avec les critères recherchés ; "
+                         f"recherche élargie à la province de {location['province']}. " + location["basis"])
         if self.event_data["planning"]:
             planning = self.event_data["planning"]
             start, end = (datetime.fromisoformat(planning[key]).strftime("%d/%m/%Y à %H:%M") for key in ("start", "end"))
@@ -661,6 +789,15 @@ class EventRun:
                     lines.append(f"  {name} : {offer.get('description', '').rstrip('.')}.")
         costs = self.costs()
         lines.extend(financial_lines(costs))
+        for observation in self.event_data["weather"]:
+            label = f"Météo consultée — {observation['city']}, {observation['date']} ({observation['source']}) : "
+            if observation["status"] == "available":
+                forecast = observation["forecast"]
+                lines.append(label + f"{forecast['temperature_min']:g} à {forecast['temperature_max']:g} °C ; "
+                             f"précipitations {forecast['precipitation_mm']:g} mm ; risque de pluie {forecast['rain_probability']:g} % ; "
+                             f"vent maximal {forecast['wind_max_kmh']:g} km/h. Prévision, sans garantie des conditions réelles.")
+            else:
+                lines.append(label + "indisponible. " + observation["error"])
         labels = {"planning": "planning", "budget": "budget", "venue": "salle", "catering": "traiteur",
                   "provider": "prestataire", "documents": "documents"}
         for task, outcome in self.event_data["tasks"].items():
@@ -672,7 +809,9 @@ class EventRun:
                     unresolved = "Email en attente : aucune salle sélectionnée ; destinataire inconnu"
                 lines.append(f"Non résolu — {labels.get(task, task)} : {unresolved.rstrip('.')}.")
         for document in self.event_data["documents"]:
-            lines.append(("Brouillon refusé :\n" if document.get("approved") is False else "Document :\n") + document["content"])
+            label = ("Brouillon approuvé" if document.get("approved") is True else
+                     "Brouillon refusé" if document.get("approved") is False else "Document")
+            lines.append(label + " :\n" + document["content"])
         assumptions = self.event_data["requirements"].get("assumptions")
         if assumptions:
             lines.append("Hypothèses : " + assumptions)

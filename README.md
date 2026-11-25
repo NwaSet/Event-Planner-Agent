@@ -140,7 +140,22 @@ After activating the virtual environment and installing all dependencies, start 
 python main.py
 ```
 
+On Windows, this opens a separate console window using the same Python interpreter (and virtual environment), with the existing `rich.console.Console` display. The original process waits for that window to close and returns its exit code. To keep the interface inside the current terminal instead, use `python main.py --current-console`. Other platforms use the current terminal by default.
+
 The application is intended to accept a natural-language event request and coordinate the appropriate AI agents.
+
+The terminal now offers:
+
+```text
+Event Planner Agent
+1. Nouvelle conversation
+2. Historique des conversations
+3. Quitter
+```
+
+Choose **1**, describe the event and answer any human validation prompts. Each request starts a fresh multi-agent run and is saved automatically. After the result, return to the menu or choose **3** to quit. Relaunch `python main.py`, choose **2**, then select a conversation by number to consult its saved messages and event record. Press Enter to return to the menu; `0` returns from the history list without opening anything.
+
+History works without a configured API key. Only creating a new event checks the LLM configuration. Opening a saved conversation never runs agents, reloads catalogues, recalculates decisions or requests approval again.
 
 ### Example request
 
@@ -178,12 +193,16 @@ Event-Planner-Agent/
 ├── .venv/                 
 │
 ├── controller/
-│   └── event_controller.py       # UI extension placeholder
+│   └── event_controller.py       # Fresh run + automatic conversation saving
+│
+├── dao/
+│   └── conversation_dao.py       # JSON persistence, independent of agents/UI
 │
 ├── data/
 │   ├── providers.json
 │   ├── caterers.json
 │   ├── venues.json
+│   ├── conversations/           # Personal local history, ignored by Git
 │   └── logs/logs.jsonl
 │
 ├── model/
@@ -342,7 +361,69 @@ Preferences use a text format; dictionary input is normalized to compact JSON te
 
 An announced task list allows automatic stopping when all requested tasks are terminal; without it, the Supervisor can keep delegating and then finish naturally. Empty results never count as a successful event. A known limited budget requires Budgetary's allocation before selections; unknown or unlimited budgets need no allocation. A missing catering headcount can fail that task without blocking a venue recommendation. Errors do not cascade to independent tasks.
 
-There is no conversation persistence, event reload or resumption. `supervisor.event_data` and `supervisor.counters` expose the last result for diagnostics only and are replaced on the next run. Catalogue references are released at the end of the run. Technical usage logs remain persistent.
+The controller persists each new run locally; reopening it is read-only. `supervisor.event_data` and `supervisor.counters` still describe only the current run and are replaced on the next one. Before releasing catalogue references, the Supervisor captures `event_details`: selected venue/caterer/provider names and offers plus calculated financial details. The controller saves this snapshot alongside the exact `event_data`, without duplicating full catalogues or private agent histories. Technical usage logs remain separate.
+
+### Local conversation format and DAO
+
+One UTF-8 JSON file is stored at `data/conversations/<conversation_id>.json`, relative to the project, independent of the terminal's current directory. IDs are UUID4 hexadecimal strings. Personal records and temporary files are ignored by Git; only `.gitkeep` is tracked. Timestamps use ISO 8601 in UTC with an explicit offset. The title is derived locally from the request (maximum 80 characters); no title-generation LLM call is added.
+
+The version 1 structure is:
+
+```json
+{
+  "schema_version": 1,
+  "conversation_id": "0123456789abcdef0123456789abcdef",
+  "title": "Une demande d'événement",
+  "created_at": "2026-11-25T15:00:00+00:00",
+  "updated_at": "2026-11-25T15:01:00+00:00",
+  "status": "completed",
+  "messages": [
+    {"role": "user", "content": "Une demande d'événement"},
+    {"role": "assistant", "content": "Réponse finale exacte"}
+  ],
+  "event_data": {},
+  "event_details": {}
+}
+```
+
+The empty objects above stand for the actual saved data, without filling in missing decisions:
+
+- `messages`: exact original request and final response, including whitespace; user-facing history only.
+- `event_data`: original request, requirements, dates, budget allocation, selected IDs, documents, task errors, human approvals, weather observations and geographic fallback state, as available from the run. IDs such as `"002"` remain strings; numeric kit IDs remain numbers.
+- `event_details`: `venue`, `catering`, `providers` and `costs` snapshots captured during execution, so historical names, offers and prices do not depend on later catalogue changes. If the snapshot cannot be built, an `unavailable` explanation is stored; the original decisions and response remain available.
+- Status: `running`, `completed`, `partial`, `refused`, `error` or `interrupted`. A human refusal is distinguished from a technical failure; its exact plan/draft and approval status remain in `event_data`.
+
+The DAO uses standard JSON types, with explicit validation of the format and timestamps. Unsupported Python objects and non-finite floats are rejected with a clear error, never hidden with `default=str`. The current event data and financial outputs already use JSON-compatible types.
+
+```python
+from dao.conversation_dao import (
+    create_conversation, save_conversation, list_conversations, load_conversation,
+)
+from controller.event_controller import run_conversation
+
+# New execution, including automatic saving (this calls the configured models):
+conversation = run_conversation("Organise une soirée à Namur.")
+
+# Read-only operations; no agents or model configuration required:
+history = list_conversations()  # {"conversations": [metadata...], "errors": [diagnostics...]}
+saved = load_conversation(conversation["conversation_id"])
+
+# Lower-level creation and writing, without agents:
+draft = create_conversation("Une nouvelle demande")  # in-memory record only
+path = save_conversation(draft)
+```
+
+`save_conversation`, `list_conversations`, `load_conversation` and `run_conversation` accept an optional `directory` argument, useful for tests or another local frontend. `save_conversation` returns the final `Path`; `load_conversation` returns independent data; `list_conversations` returns metadata sorted by creation date, newest first, and separate errors for unreadable files. `ConversationError` reports invalid IDs, missing files, corrupt/incompatible JSON and storage failures. IDs cannot contain arbitrary paths; symbolic links to conversation files are rejected.
+
+### Saving, errors and read-only reopening
+
+The controller saves the request with status `running` before any LLM call, then saves the final complete, partial, refused or failed result. A handled interruption preserves decisions already available. Each save writes a temporary file in the same directory, flushes it and atomically replaces the destination. An initial storage failure prevents execution. If the final write fails, the terminal still displays the in-memory result and explicitly reports the storage failure; the previous valid file remains available.
+
+An abrupt process termination may leave only the initial `running` record: there is no checkpoint after every tool call and no automatic resumption. Reopening displays only what was actually saved, including a notice for an unfinished run. It does not modify the file, even its modification timestamp. Corrupt files are reported individually without hiding valid conversations. This local version has no database, locking for concurrent writers, authentication or multi-user support.
+
+No trace listener is used for persistence. Prompts, reasoning, API keys, `.env` contents, model usage and technical logs are not copied into conversations. Existing technical logs remain in `data/logs/`; conversation files contain user-facing text and event decisions. This is an unencrypted local history, not a remote service.
+
+The DAO has no Rich, terminal input, Streamlit or model imports. A future Streamlit UI can reuse these same functions and `run_conversation` for new requests. Continuing an old event requires a separate design for revisions, affected decisions and human approvals; that functionality is intentionally not implemented here.
 
 Limits are configurable without adding dependencies:
 
@@ -357,7 +438,7 @@ supervisor = create_orchestrator(
 result = supervisor.run("Organise une soirée à Namur sans limite de budget.")
 ```
 
-One correction is allowed for an invalid structured answer. Provider errors, `content_filter` and explicit refusals are distinguished from invalid JSON and are not repaired by reprompting. Identical `tool_use_failed` requests are not retried. Once announced tasks are finished, or a limit stops progress, the Supervisor returns the verified Python summary without a redundant LLM synthesis. If it finishes naturally without another tool call, its final text is also replaced by the verified summary. Standalone specialists retain their final turn when necessary, within the shared budget. CLI exit code `0` means success, `2` a partial result, and `1` a configuration/execution failure.
+One correction is allowed for an invalid structured answer. Provider errors, `content_filter` and explicit refusals are distinguished from invalid JSON and are not repaired by reprompting. Identical `tool_use_failed` requests are not retried. Once announced tasks are finished, or a limit stops progress, the Supervisor returns the verified Python summary without a redundant LLM synthesis. If it finishes naturally without another tool call, its final text is also replaced by the verified summary. Standalone specialists retain their final turn when necessary, within the shared budget. On leaving the menu, CLI exit codes reflect the last new execution: `0` for success (or consultation only), `2` for a partial/refused result, `1` for a configuration/execution/storage failure, and `130` for interruption.
 
 The user summary displays local dates and times, venue and supplier names, offer descriptions, calculated amounts and unresolved tasks. Venue exclusivities are shown as authorized supplier names instead of a JSON object. Internal IDs remain in `event_data`; missing catalogue references are explicitly marked for verification. Availability and incomplete pricing remain conditional.
 
@@ -462,7 +543,7 @@ After the agents generate the event plan, the user can review:
 - Event schedule
 - Planning constraints
 
-The user can then approve the plan or request modifications.
+The user can approve or refuse the plan. A refusal stops email generation for that run; revisions are not implemented yet.
 
 Email drafts are generated or finalized after validation.
 
@@ -516,7 +597,7 @@ Tests block network access and mock LLM/API responses. They cover direct delegat
 
 This project is being developed as part of an academic course on AI agents and multi-agent orchestration.
 
-The architecture, agent responsibilities and tools may evolve during development. Current event handling is strictly one-shot.
+The architecture, agent responsibilities and tools may evolve during development. Each new event execution remains one-shot. Conversations are saved locally and can be reopened read-only; saved events cannot yet be resumed or modified.
 
 ---
 

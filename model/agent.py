@@ -16,16 +16,17 @@ class Agent:
         # descriptions envoyées au modèle
         self.schemas = [schema for _, schema in tools]
 
-    def run(self, request, *, counters=None, validate=None, completed=None, summary=None, compact_output=False):
+    def run(self, request, *, counters=None, validate=None, completed=None, summary=None, compact_output=False,
+            completed_output=None):
         """Traite une demande et renvoie la réponse finale (texte)."""
         token = run_counters.set(counters) if counters is not None else None
         try:
-            return self._run(request, validate, completed, summary, compact_output)
+            return self._run(request, validate, completed, summary, compact_output, completed_output)
         finally:
             if token is not None:
                 run_counters.reset(token)
 
-    def _run(self, request, validate, completed, summary, compact_output):
+    def _run(self, request, validate, completed, summary, compact_output, completed_output):
         messages = [
             {"role": "system", "content": self.instructions},
             {"role": "user", "content": request},
@@ -116,6 +117,14 @@ class Agent:
                     cache[key] = (appel.id, resultat)
                     observations.append({"tool": appel.function.name, "result": resultat})
                 messages.append(tool_message(appel, resultat))
+                if completed_output:
+                    # Un contenu validé par l'humain termine immédiatement la délégation.
+                    texte = completed_output()
+                    if texte is not None:
+                        self.last_status = "success"
+                        self.last_error_code = None
+                        trace.response(self.name, texte)
+                        return texte
                 if completed and completed():
                     # Répondre aux autres tool_call_id sans lancer de travail devenu inutile.
                     for skipped in message.tool_calls[message.tool_calls.index(appel) + 1:]:

@@ -22,6 +22,7 @@ obligatoires (type, capacité, budget, horaires, exclusions) vont dans leurs cha
 Pour une soirée étudiante explicite, transmets event_type="soiree_etudiante" aux recherches.
 Pour une demande multiple, indique toutes les tasks dès la première délégation :
 cette liste facultative sert à reconnaître la fin, pas à imposer l'ordre des tâches.
+tasks appartient au niveau supérieur de la délégation, jamais à requirements.
 N'invente ni effectif ni plafond. budget_total=null signifie sans plafond connu/illimité.
 Une soirée générique n'est pas soiree_etudiante : ne crée pas ce filtre.
 Une soirée musicale, électronique ou avec DJ n'est pas automatiquement un concert.
@@ -31,6 +32,11 @@ Transmets guests et limit comme entiers, les budgets comme nombres, les booléen
 true/false et les identifiants comme chaînes exactes, avec leurs zéros initiaux.
 Transmets seulement les informations explicites, les préférences et les tâches utiles.
 Une ville d'événement ne signifie pas que les prestataires doivent y avoir leur siège.
+Une ville imposée (« uniquement à », « pas en dehors de ») exige location_scope="city".
+« Dans le coin de », « autour de », « près de » ou « dans les environs de » autorise
+location_scope="province_fallback" : Python cherche d'abord dans la ville, puis seulement
+dans la même province si aucun résultat. C'est un périmètre administratif explicite,
+pas une distance ni une garantie de voisinage ; les catalogues n'en donnent pas.
 Ne prépare pas les filtres de recherche : Python les prépare lors des délégations.
 Par exemple planning_agent(demande="Propose une date", tasks=["planning","venue","catering","provider"]).
 Pour une soirée, rental_period=soiree est facultatif. Ne fabrique aucune valeur inconnue.
@@ -60,6 +66,10 @@ sans information nouvelle. Explique les conflits obligatoires, sans les assoupli
 Les montants HT et TTC ne doivent pas être additionnés comme un coût final garanti.
 Writer est réservé aux documents explicitement demandés ; une réponse simple n'en a pas besoin.
 Les emails sont des brouillons soumis à ask_user ; aucun envoi automatique.
+Termine les tâches du plan avant Writer. Python présente le plan consolidé et demande
+son approbation humaine avant tout appel au Writer pour un email. Un refus arrête
+la génération des emails dans ce run ; ne redélègue pas. L'accord du plan ne remplace
+pas la validation individuelle du brouillon par ask_user.
 Une sélection de salle ET une demande de devis par email exigent tasks=["venue","documents"]
 et document_kind="email". Après sélection, délègue à Writer ; ne termine pas avant sa validation.
 Si la sélection échoue, explique le blocage de cet email sans inventer de destinataire.
@@ -84,11 +94,11 @@ class Supervisor(Agent):
                                   (planning, "planning_agent", "planning"), (decision, "decision_making_agent", None)):
             properties = {
                 "demande": {"type": "string"},
-                "requirements": {"type": "object", "description": "Facultatif : contraintes explicites nouvelles seulement, sans champs vides.",
+                "requirements": {"type": "object", "description": "Contraintes explicites nouvelles seulement. Ne contient jamais tasks, qui appartient au niveau supérieur.",
                                  "properties": REQUIREMENT_PROPERTIES,
                                  "additionalProperties": False},
                 "tasks": {"type": "array", "items": {"type": "string", "enum": list(TASKS)},
-                          "description": "Facultatif : tâches demandées, sans ordre imposé."},
+                          "description": "Facultatif : tâches demandées, sans ordre imposé ; uniquement ici, jamais dans requirements."},
             }
             if task is None:
                 properties["category"] = {"type": "string", "enum": list(CATALOGS)}
@@ -103,6 +113,7 @@ class Supervisor(Agent):
         self.schemas = [schema for _, schema in definitions]
 
     def run(self, request):
+        self.event_details = {}
         run = EventRun(request, self.max_llm_calls, self.max_delegations)
         self._bind(run)
         # Diagnostic du dernier run seulement ; remplacé intégralement à chaque demande.
@@ -120,6 +131,15 @@ class Supervisor(Agent):
             self.last_status = "partial"
             return run.summary(f"Exécution interrompue : {error}")
         finally:
+            # Figer les détails pendant le run : une réouverture ne dépendra plus du catalogue.
+            try:
+                self.event_details = {
+                    "venue": run.selection_details("venue"), "catering": run.selection_details("catering"),
+                    "providers": [run.selection_details("provider")] if run.event_data["providers"] else [],
+                    "costs": run.costs(),
+                }
+            except (ValueError, TypeError, KeyError, StopIteration):
+                self.event_details = {"unavailable": "Détails incomplets ; consulter les décisions et le résultat sauvegardés."}
             # Libérer les catalogues et le registre capturés dans les délégations.
             self._bind(None)
 

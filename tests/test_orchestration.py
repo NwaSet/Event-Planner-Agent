@@ -3,6 +3,7 @@
 import copy
 import json
 from datetime import date
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -17,6 +18,9 @@ from model.event_state import EventRun, encode
 
 
 PLANNING = {"start": "2026-12-19T20:00", "end": "2026-12-20T00:00"}
+STUDENT_PLANNING = {"start": "2026-12-05T22:00", "end": "2026-12-06T04:00"}
+WEATHER_FORECAST = {"temperature_min": 3.4, "temperature_max": 7.3, "precipitation_mm": 0,
+                    "rain_probability": 20, "wind_max_kmh": 20.2, "weather_code": 3}
 
 
 def message(content=None, *calls):
@@ -61,6 +65,302 @@ def prepared(requirements=None, tasks=None):
     run = EventRun("Demande de test")
     run.remember(requirements or {}, tasks or ["venue"])
     return run
+
+
+@pytest.mark.parametrize("nested,top", [(False, ["planning"]), (True, None), (True, ["planning"])])
+def test_delegation_tasks_normalization_needs_no_llm_repair(monkeypatch, nested, top):
+    run = EventRun("Une date")
+    _, _, planning, _ = create_all_agents()
+    requirements = {"city": "Namur", **({"tasks": ["planning"]} if nested else {})}
+    original = copy.deepcopy(requirements)
+    chat = Mock(return_value=message(encode(PLANNING)))
+    monkeypatch.setattr(agent_module, "chat", chat)
+    assert run.delegate(planning, "Date", "planning", requirements=requirements, tasks=top)["status"] == "success"
+    assert requirements == original and "tasks" not in run.event_data["requirements"]
+    assert run.complete() and run.counters["llm_calls"] == 1
+    chat.assert_called_once()
+
+
+def test_delegation_tasks_order_is_not_a_conflict():
+    run = EventRun("test")
+    run.remember({"tasks": ["venue", "planning"]}, ["planning", "venue"])
+    assert set(run.event_data["tasks"]) == {"venue", "planning"}
+
+
+@pytest.mark.parametrize("nested,top", [(["planning"], ["venue"]), (["planning"], []),
+                                       ([], None), ("planning", None), (["unknown"], None)])
+def test_delegation_tasks_conflicts_or_invalid_values_are_not_silently_merged(monkeypatch, nested, top):
+    run = EventRun("test")
+    _, _, planning, _ = create_all_agents()
+    result = run.delegate(planning, "Date", "planning", requirements={"tasks": nested}, tasks=top)
+    assert result["code"] == "invalid_requirements"
+    assert not run.event_data["planning"]
+    agent_module.chat.assert_not_called()
+
+
+def test_tasks_recovery_does_not_weaken_business_validation():
+    with pytest.raises(ValueError, match="inconnus"):
+        EventRun("test").remember({"tasks": ["planning"], "unknown": True})
+    with pytest.raises(ValueError, match="Effectif"):
+        EventRun("test").remember({"tasks": ["planning"], "guests": -1})
+
+
+def simulate_weather_http(monkeypatch):
+    geo = Mock()
+    geo.json.return_value = {"results": [{"name": "Namur", "country": "Belgique", "latitude": 50.46, "longitude": 4.86}]}
+    forecast = Mock()
+    forecast.json.return_value = {"daily": {"time": ["2026-12-05"],
+        **{field: [WEATHER_FORECAST[key]] for key, field in tools.WEATHER_FIELDS.items()}}}
+    get = Mock(side_effect=[geo, forecast])
+    monkeypatch.setattr(tools.requests, "get", get)
+    monkeypatch.setattr(tools, "date", event_state.date)
+    return get
+
+
+def test_weather_captured_from_validated_api_shared_and_deduplicated(monkeypatch):
+    run = prepared({"city": "Namur"}, ["planning", "venue"])
+    _, _, planning, _ = create_all_agents()
+    original = planning.fonctions
+    get = simulate_weather_http(monkeypatch)
+    chat = Mock(side_effect=[message(None, call("get_meteo", day="2026-12-05", city="Namur"),
+                                    call("get_meteo", day="2026-12-05", city=" namur ")),
+                             message(encode(STUDENT_PLANNING))])
+    monkeypatch.setattr(agent_module, "chat", chat)
+    assert run.delegate(planning, "Date et météo", "planning")["status"] == "success"
+    weather = run.event_data["weather"]
+    assert len(weather) == 1 and weather[0]["status"] == "available"
+    assert weather[0]["source"] == "Open-Meteo" and weather[0]["city"] == "Namur"
+    assert weather[0]["date"] == "2026-12-05" and weather[0]["forecast"] == WEATHER_FORECAST
+    assert run.context("venue")["weather"] == weather[0]
+    assert get.call_count == 2 and chat.call_count == 2  # géocodage + prévision, sans synthèse LLM
+    assert planning.fonctions is original
+    assert "3.4 à 7.3 °C" in run.summary("") and "sans garantie" in run.summary("")
+    assert "weather" not in run.context("provider")
+
+
+def test_decision_agent_receives_forecast_without_relaxing_constraints(monkeypatch):
+    run = prepared({"city": "Namur", "guests": 100, "planning": {
+        "start": "2026-12-05T20:00", "end": "2026-12-05T23:00"}}, ["venue"])
+    simulate_weather_http(monkeypatch)
+    run.observe_weather("2026-12-05", "Namur")
+    _, _, _, decision = create_all_agents()
+
+    def choose(messages, **kwargs):
+        payload = json.loads(messages[1]["content"])
+        assert payload["weather"]["forecast"] == WEATHER_FORECAST
+        assert payload["filters"]["guests"] == 100
+        assert all(row["lieux"]["commune"] == "Namur" for row in payload["search"]["candidates"])
+        return select_first(messages)
+
+    monkeypatch.setattr(agent_module, "chat", choose)
+    assert run.delegate(decision, "Salle couverte si possible", "venue")["status"] == "success"
+
+
+@pytest.mark.parametrize("failure", ["api_error", "horizon"])
+def test_weather_unavailable_is_stored_without_blocking_planning(monkeypatch, failure):
+    run = prepared({"city": "Namur"}, ["planning"])
+    _, _, planning, _ = create_all_agents()
+    monkeypatch.setattr(tools, "date", event_state.date)
+    get = Mock(side_effect=tools.requests.ConnectionError("offline"))
+    monkeypatch.setattr(tools.requests, "get", get)
+    day = "2026-12-05" if failure == "api_error" else "2026-12-19"
+    schedule = STUDENT_PLANNING if failure == "api_error" else PLANNING
+    monkeypatch.setattr(agent_module, "chat", Mock(side_effect=[
+        message(None, call("get_meteo", day=day, city="Namur")), message(encode(schedule))]))
+    assert run.delegate(planning, "Date", "planning")["status"] == "success"
+    observation = run.event_data["weather"][0]
+    assert observation["status"] == "unavailable" and "forecast" not in observation
+    assert observation["code"] == ("api_error" if failure == "api_error" else "forecast_unavailable")
+    assert run.observe_weather(day, "Namur") == observation  # pas de nouvelle tentative API
+    assert get.call_count == (1 if failure == "api_error" else 0)
+    assert "indisponible" in run.summary("") and "°C" not in run.summary("")
+
+
+@pytest.mark.parametrize("city,day", [("Dinant", "2026-12-05"), ("Namur", "2026-12-06"), ("Namur", None)])
+def test_weather_not_forwarded_for_another_city_or_date(monkeypatch, city, day):
+    run = prepared({"city": city, **({"date": day} if day else {})})
+    simulate_weather_http(monkeypatch)
+    run.observe_weather("2026-12-05", "Namur")
+    assert "weather" not in run.context("venue")
+
+
+def test_no_weather_call_or_summary_when_planning_does_not_need_it(monkeypatch):
+    run = prepared({}, ["planning"])
+    _, _, planning, _ = create_all_agents()
+    get = Mock()
+    monkeypatch.setattr(tools.requests, "get", get)
+    monkeypatch.setattr(agent_module, "chat", Mock(return_value=message(encode(PLANNING))))
+    assert run.delegate(planning, "Date", "planning")["status"] == "success"
+    assert run.event_data["weather"] == [] and "weather" not in run.context("venue")
+    assert "Météo consultée" not in run.summary("")
+    get.assert_not_called()
+
+
+@pytest.mark.parametrize("location", ["Uniquement à Namur", "Obligatoirement dans la commune de Namur",
+                                      "Pas en dehors de Namur", "À Namur", "Autour de Namur, mais uniquement à Namur"])
+def test_strict_city_never_expands_even_when_province_has_candidates(monkeypatch, location):
+    run = EventRun("Soirée étudiante. " + location)
+    run.remember({"city": "Namur", "guests": 120, "planning": STUDENT_PLANNING}, ["venue"])
+    _, _, _, decision = create_all_agents()
+    assert run.delegate(decision, "Salle", "venue")["status"] == "no_match"
+    assert run.event_data["location_search"] is None and run.event_data["venue"] is None
+    assert "recherche élargie" not in run.summary("")
+    agent_module.chat.assert_not_called()
+
+
+@pytest.mark.parametrize("location", ["Dans le coin de Namur", "Autour de Namur", "Près de Namur", "Dans les environs de Namur"])
+def test_soft_city_expands_to_same_province_and_preserves_actual_commune(monkeypatch, location):
+    run = EventRun("Soirée étudiante. " + location)
+    run.remember({"guests": 120, "planning": STUDENT_PLANNING}, ["venue"])
+    _, _, _, decision = create_all_agents()
+
+    def choose(messages, **kwargs):
+        payload = json.loads(messages[1]["content"])
+        assert "city" not in payload["filters"] and payload["filters"]["province"] == "Namur"
+        assert payload["location_search"]["requested_city"] == "Namur"
+        assert all(row["lieux"]["commune"] == "Dinant" for row in payload["search"]["candidates"])
+        assert payload["filters"]["event_type"] == "soiree_etudiante" and payload["filters"]["guests"] == 120
+        return select_first(messages)
+
+    chat = Mock(side_effect=choose)
+    monkeypatch.setattr(agent_module, "chat", chat)
+    assert run.delegate(decision, "Salle", "venue")["status"] == "success"
+    assert run.event_data["venue"] == {"id": "salle_109"}
+    assert run.event_data["requirements"]["city"] == "Namur"  # demande originale conservée
+    run.remember({"preferences": "Bon son"})  # les vérifications ultérieures acceptent la salle de la zone étendue
+    assert run.context("venue")["filters"]["province"] == "Namur"
+    output = run.summary("")
+    assert "recherche élargie à la province de Namur" in output
+    assert "Halle des Hautes Lumières — Dinant" in output and "proximité et temps de trajet non établis" in output
+    chat.assert_called_once()
+
+
+def test_soft_city_keeps_local_results_before_considering_province(monkeypatch):
+    run = EventRun("Anniversaire autour de Namur")
+    run.remember({"event_type": "anniversaire", "guests": 100}, ["venue"])
+    _, _, _, decision = create_all_agents()
+    monkeypatch.setattr(agent_module, "chat", select_first)
+    assert run.delegate(decision, "Salle", "venue")["status"] == "success"
+    assert run.selected_row("venue")["lieux"]["commune"] == "Namur"
+    assert run.event_data["location_search"] is None
+
+
+@pytest.mark.parametrize("requirements", [
+    {"guests": 10000}, {"venue_filters": {"ids": ["salle_010"]}},
+    {"venue_filters": {"max_budget": 1}}, {"venue_filters": {"space_type": "exterieur"}},
+    {"planning": {"start": "2026-12-05T22:00", "end": "2026-12-06T06:00"}},
+])
+def test_expansion_cannot_bypass_capacity_ids_budget_space_or_hours(monkeypatch, requirements):
+    run = EventRun("Soirée étudiante autour de Namur")
+    run.remember({"guests": 120, "planning": STUDENT_PLANNING, **requirements}, ["venue"])
+    _, _, _, decision = create_all_agents()
+    assert run.delegate(decision, "Salle", "venue")["status"] == "no_match"
+    assert run.event_data["venue"] is None
+    assert run.event_data["location_search"]["province"] == "Namur"
+    agent_module.chat.assert_not_called()
+
+
+def test_expansion_still_respects_selected_provider_exclusivity(monkeypatch):
+    run = EventRun("Soirée étudiante autour de Namur")
+    run.remember({"guests": 120, "planning": STUDENT_PLANNING}, ["venue", "provider"])
+    run.record("provider", {"status": "success", "result": {"id": "002", "kit_id": 1}})
+    _, _, _, decision = create_all_agents()
+    assert run.delegate(decision, "Salle", "venue")["status"] == "no_match"
+    assert run.event_data["providers"] == [{"id": "002", "kit_id": 1}]
+    agent_module.chat.assert_not_called()
+
+
+def test_expansion_cannot_be_redirected_to_another_province_by_tool(monkeypatch):
+    run = EventRun("Soirée étudiante autour de Namur")
+    run.remember({"guests": 120, "planning": STUDENT_PLANNING}, ["venue"])
+    _, _, _, decision = create_all_agents()
+
+    def fake(messages, **kwargs):
+        if len(messages) == 2:
+            return message(None, call("get_venues", province="Hainaut"))
+        observation = json.loads(messages[-1]["content"])
+        assert observation["status"] == "invalid_filters" and "province" in observation["error"]
+        return message(encode({"id": "salle_109"}))
+
+    monkeypatch.setattr(agent_module, "chat", fake)
+    assert run.delegate(decision, "Salle", "venue")["status"] == "success"
+    assert run.selected_row("venue")["lieux"]["province"] == "Namur"
+
+
+def test_unknown_soft_city_does_not_fall_back_to_entire_country(monkeypatch):
+    run = prepared({"city": "Ville inconnue", "location_scope": "province_fallback"})
+    _, _, _, decision = create_all_agents()
+    assert run.delegate(decision, "Salle", "venue")["status"] == "no_match"
+    assert run.event_data["location_search"] is None
+    agent_module.chat.assert_not_called()
+
+
+STUDENT_REQUEST = ("On aimerait faire une grosse soirée entre étudiants dans le coin de Namur, "
+                   "avec du bon son et de la place pour danser. On est environ 120 et on n'a pas vraiment "
+                   "de limite de prix. Tu peux nous organiser ça ?")
+
+
+@pytest.mark.parametrize("compatible_venue", [True, False])
+def test_real_student_request_integration_with_structural_fix_weather_finance_and_geography(monkeypatch, compatible_venue):
+    get = simulate_weather_http(monkeypatch)
+    stages = []
+    if not compatible_venue:
+        catalogs = load_catalogs()
+        catalogs["venue"] = [row for row in catalogs["venue"] if row["id"] != "salle_109"]
+        monkeypatch.setattr(event_state, "load_catalogs", lambda: catalogs)
+
+    def fake(messages, tools=None, agent=None):
+        stages.append(agent)
+        if agent == "planning agent":
+            if len(messages) == 2:
+                return message(None, call("get_meteo", day="2026-12-05", city="Namur"))
+            return message(encode(STUDENT_PLANNING))
+        if agent == "decision making agent":
+            payload = json.loads(messages[1]["content"])
+            if payload["task"] == "venue":
+                assert payload["location_search"]["province"] == "Namur"
+                assert "weather" not in payload  # Namur n'est pas la météo de Dinant
+            elif not compatible_venue:
+                if len(messages) == 2:
+                    return message(None, call("get_providers"))
+                return message(encode({"id": "002", "kit_id": 6}))
+            return select_first(messages)
+        assert agent == "Supervisor"
+        turn = stages.count("Supervisor")
+        if turn == 1:
+            tasks = ["planning", "venue", "provider"]
+            return message(None, call("planning_agent", demande="Date et météo", tasks=tasks, requirements={
+                "city": "Namur", "event_type": "soiree_etudiante", "guests": 120, "budget_total": None,
+                "rental_period": "soiree", "music_required": True, "tasks": tasks}))
+        if turn == 2:
+            return message(None, call("decision_making_agent", category="venue", demande="Salle"))
+        if turn == 3:
+            return message(None, call("decision_making_agent", category="provider", demande="Bon son"))
+        assert turn == 4 and not compatible_venue
+        return message("Résultats partiels : aucune salle compatible, prestataire proposé.")
+
+    monkeypatch.setattr(agent_module, "chat", fake)
+    supervisor = create_orchestrator()
+    output = supervisor.run(STUDENT_REQUEST)
+    assert supervisor.last_status == ("success" if compatible_venue else "partial")
+    assert supervisor.event_data["planning"] == STUDENT_PLANNING
+    assert supervisor.counters["llm_calls"] == (7 if compatible_venue else 8)
+    assert supervisor.counters["delegations"] == (3 if compatible_venue else 2)
+    assert get.call_count == 2 and len(supervisor.event_data["weather"]) == 1
+    assert "05/12/2026 à 22:00" in output and "06/12/2026 à 04:00" in output
+    assert "Météo consultée — Namur, 2026-12-05" in output
+    assert "Coût TTC total : non déterminable" in output
+    assert "TVA du prestataire inconnue" in output
+    if compatible_venue:
+        assert supervisor.event_data["venue"] == {"id": "salle_109"}
+        assert supervisor.event_data["providers"][0]["id"] in ("010", "012")
+        assert "— Dinant" in output and "(partiel)" in output
+    else:
+        assert supervisor.event_data["venue"] is None
+        assert supervisor.event_data["providers"] == [{"id": "002", "kit_id": 6}]
+        assert "B-Sound Events" in output and "3 000,00 EUR HT" in output
+        assert "Aucun sous-total TTC calculable" in output
+        assert "Somme connue à mobiliser" not in output and ": 0,00 EUR" not in output
 
 
 def test_final_financial_response_cannot_replace_python_amounts_with_llm_claims(monkeypatch):
@@ -795,7 +1095,7 @@ def test_delegation_limit_preserves_previous_success(monkeypatch):
 def test_email_refused_never_finalized_or_reapproved(monkeypatch):
     run = prepared({"document_kind": "email"}, ["documents"])
     _, writer, _, _ = create_all_agents()
-    approval = Mock(return_value={"approved": False})
+    approval = Mock(side_effect=[{"approved": True}, {"approved": False}])
     monkeypatch.setattr(tools, "ask_user", approval)
     chat = Mock(side_effect=[message(None, call("ask_user", message="Objet : demande de disponibilité")),
                              message("Email approuvé !")])
@@ -803,18 +1103,153 @@ def test_email_refused_never_finalized_or_reapproved(monkeypatch):
     assert run.delegate(writer, "Rédiger", "documents")["status"] == "refused"
     assert run.event_data["documents"][0]["approved"] is False
     assert run.delegate(writer, "Rédiger encore", "documents")["status"] == "reused"
-    approval.assert_called_once()
+    assert approval.call_count == 2  # plan, puis brouillon
+    assert chat.call_count == 1
     assert not run.successful()
 
 
-def test_email_requires_approval_of_exact_returned_text(monkeypatch):
+def test_email_preserves_approved_text_without_llm_rewrite(monkeypatch):
     run = prepared({"document_kind": "email"}, ["documents"])
     _, writer, _, _ = create_all_agents()
     monkeypatch.setattr(tools, "ask_user", Mock(return_value={"approved": True}))
     monkeypatch.setattr(agent_module, "chat", Mock(side_effect=[message(None, call("ask_user", message="Brouillon validé")),
                                                               message("Texte changé après validation")]))
-    assert run.delegate(writer, "Rédiger", "documents")["status"] == "error"
+    assert run.delegate(writer, "Rédiger", "documents")["status"] == "success"
+    assert run.event_data["documents"] == [{"content": "Brouillon validé", "approved": True}]
+    agent_module.chat.assert_called_once()
+
+
+@pytest.mark.parametrize("approved", [True, False])
+def test_real_writer_incident_preserves_original_and_never_consumes_rewrite(monkeypatch, approved):
+    replay = json.loads((Path(__file__).parent / "fixtures" / "writer_52c0c76e.json").read_text(encoding="utf-8"))
+    original, rewrite = replay["responses"]
+    draft = json.loads(original["tool_calls"][0]["function"]["arguments"])["message"]
+    assert draft != rewrite["content"] and "a retenue" in draft and "a retenu toute" in rewrite["content"]
+    run = prepared({"document_kind": "email", "venue_filters": {"ids": ["salle_010"]}}, ["venue", "documents"])
+    _, writer, _, decision = create_all_agents()
+    monkeypatch.setattr(agent_module, "chat", select_first)
+    assert run.delegate(decision, "Salle", "venue")["status"] == "success"
+    venue = copy.deepcopy(run.event_data["venue"])
+    approval = Mock(side_effect=[{"approved": True}, {"approved": approved}])
+    monkeypatch.setattr(tools, "ask_user", approval)
+    chat = Mock(side_effect=[message(original["content"], call("ask_user", message=draft)), message(rewrite["content"])])
+    monkeypatch.setattr(agent_module, "chat", chat)
+    result = run.delegate(writer, "Devis", "documents")
+    assert result["status"] == ("success" if approved else "refused")
+    assert run.event_data["documents"] == [{"content": draft, "approved": approved}]
+    assert run.event_data["venue"] == venue
+    assert approval.call_args_list[1].args == (draft,)
+    chat.assert_called_once()
+    assert draft in run.summary("Fin")
+    assert run.delegate(writer, "Réécrire", "documents")["status"] == "reused"
+    assert chat.call_count == 1 and approval.call_count == 2
+
+
+@pytest.mark.parametrize("approved", [True, False])
+@pytest.mark.parametrize("document_kind", ["email", "synthesis"])
+def test_draft_whitespace_punctuation_and_duplicate_tool_calls_are_preserved(monkeypatch, approved, document_kind):
+    run = prepared({"document_kind": document_kind}, ["documents"])
+    _, writer, _, _ = create_all_agents()
+    draft = " \t\r\nObjet : Devis – « salle » !\r\n\r\n  1 300 € / 1\u202f300\u00a0€…  \n\t"
+    answers = ([{"approved": True}] if document_kind == "email" else []) + [{"approved": approved}]
+    approval = Mock(side_effect=answers)
+    monkeypatch.setattr(tools, "ask_user", approval)
+    chat = Mock(return_value=message(None, call("ask_user", message=draft), call("ask_user", message="Réécriture")))
+    monkeypatch.setattr(agent_module, "chat", chat)
+    run.delegate(writer, "Email", "documents")
+    assert run.event_data["documents"] == [{"content": draft, "approved": approved}]
+    assert approval.call_args_list[-1].args == (draft,)
+    assert approval.call_count == len(answers) and chat.call_count == 1
+    assert run.counters["llm_calls"] == 1
+    assert writer.last_status == "success"  # terminaison technique, accord stocké séparément
+
+
+def test_plan_approval_does_not_replace_draft_approval(monkeypatch):
+    run = prepared({"document_kind": "email"}, ["documents"])
+    _, writer, _, _ = create_all_agents()
+    approval = Mock(return_value={"approved": True})
+    monkeypatch.setattr(tools, "ask_user", approval)
+    monkeypatch.setattr(agent_module, "chat", Mock(return_value=message("Email soi-disant approuvé")))
+    assert run.delegate(writer, "Email", "documents")["status"] == "error"
+    assert run.event_data["plan_approval"]["approved"] is True
     assert not run.event_data["documents"]
+    approval.assert_called_once()
+
+
+@pytest.mark.parametrize("pending", ["planning", "budget", "catering", "provider"])
+def test_plan_waits_for_all_declared_tasks_before_approval_and_writer(monkeypatch, pending):
+    run = prepared({"document_kind": "email"}, [pending, "documents"])
+    _, writer, _, _ = create_all_agents()
+    approval = Mock()
+    monkeypatch.setattr(tools, "ask_user", approval)
+    assert run.delegate(writer, "Email prématuré", "documents")["requires"] == pending
+    approval.assert_not_called()
+    agent_module.chat.assert_not_called()
+    assert run.event_data["plan_approval"] is None and not run.event_data["documents"]
+
+
+@pytest.mark.parametrize("declare_scope", [True, False])
+def test_plan_refusal_stops_supervisor_without_writer_or_further_llm(monkeypatch, declare_scope):
+    stages = []
+    approval = Mock(return_value={"approved": False})
+    monkeypatch.setattr(tools, "ask_user", approval)
+
+    def fake(messages, tools=None, agent=None):
+        assert approval.call_count == 0, "Aucun appel LLM après le refus du plan"
+        stages.append(agent)
+        if agent == "decision making agent":
+            return select_first(messages)
+        assert agent == "Supervisor"
+        if stages.count("Supervisor") == 1:
+            scope = {"tasks": ["venue", "documents"]} if declare_scope else {}
+            return message(None, call("decision_making_agent", category="venue", demande="Salle", **scope))
+        # Même une seconde délégation dans ce lot ne doit rien générer.
+        return message(None, call("writer_agent", demande="Email"), call("writer_agent", demande="Insister"))
+
+    monkeypatch.setattr(agent_module, "chat", fake)
+    supervisor = create_orchestrator()
+    output = supervisor.run(BIRTHDAY_EMAIL)
+    data = supervisor.event_data
+    assert stages == ["Supervisor", "decision making agent", "Supervisor"]
+    assert supervisor.counters["llm_calls"] == 3 and supervisor.counters["delegations"] == 1
+    assert supervisor.last_status == "partial"
+    assert data["venue"] and data["documents"] == []
+    assert data["tasks"]["documents"]["status"] == "refused"
+    assert data["tasks"]["documents"]["retryable"] is False
+    assert data["plan_approval"]["approved"] is False
+    plan = data["plan_approval"]["plan"]
+    assert plan["venue"]["id"] == data["venue"]["id"]
+    assert plan["venue"]["nom"] in data["plan_approval"]["content"]
+    assert "Approuvez-vous ce plan global" in data["plan_approval"]["content"]
+    approval.assert_called_once_with(data["plan_approval"]["content"])
+    assert "Plan global refusé" in output and "Aucun email généré ni envoyé" in output
+
+
+def test_plan_refusal_is_terminal_even_if_delegated_again_with_new_requirements(monkeypatch):
+    run = prepared({"document_kind": "email"}, ["documents"])
+    _, writer, _, _ = create_all_agents()
+    approval = Mock(return_value={"approved": False})
+    monkeypatch.setattr(tools, "ask_user", approval)
+    assert run.delegate(writer, "Email", "documents")["status"] == "refused"
+    saved = copy.deepcopy(run.event_data)
+    assert run.delegate(writer, "Insister", "documents", requirements={"preferences": "nouveau"})["status"] == "reused"
+    assert run.event_data == saved and run.complete() and not run.can_repair()
+    approval.assert_called_once()
+    agent_module.chat.assert_not_called()
+
+
+def test_plan_approval_is_not_reused_for_a_changed_plan(monkeypatch):
+    run = prepared({"document_kind": "email"}, ["documents"])
+    approval = Mock(side_effect=[{"approved": True}, {"approved": False}])
+    monkeypatch.setattr(tools, "ask_user", approval)
+    assert run.approve_plan() is True
+    assert run.approve_plan() is True
+    run.remember({"planning": PLANNING})
+    assert run.approve_plan() is False
+    assert approval.call_count == 2
+    assert run.event_data["plan_approval"]["plan"]["planning"] == PLANNING
+    assert "19/12/2026 à 20:00" in run.event_data["plan_approval"]["content"]
+    agent_module.chat.assert_not_called()
 
 
 def test_planning_fixed_by_user_skips_specialist(monkeypatch):
@@ -1251,7 +1686,7 @@ def test_provider_diagnostics_keep_raw_output_and_reasoning_count(monkeypatch, t
 def test_birthday_venue_then_writer_then_human_approval_without_sending(monkeypatch, approved):
     stages = []
     draft = {}
-    approval = Mock(return_value={"approved": approved})
+    approval = Mock(side_effect=[{"approved": True}, {"approved": approved}])
     monkeypatch.setattr(tools, "ask_user", approval)
 
     def fake(messages, tools=None, agent=None):
@@ -1263,6 +1698,7 @@ def test_birthday_venue_then_writer_then_human_approval_without_sending(monkeypa
             assert payload["search"]["total"] == 4
             return select_first(messages)
         if agent == "writer agent":
+            assert approval.call_count == 1  # le plan précède toute rédaction
             payload = json.loads(messages[1]["content"])
             assert payload["request"] == BIRTHDAY_EMAIL
             assert payload["venue"]["nom"] and payload["venue"]["lieux"]["commune"] == "Namur"
@@ -1283,8 +1719,12 @@ def test_birthday_venue_then_writer_then_human_approval_without_sending(monkeypa
     monkeypatch.setattr(agent_module, "chat", fake)
     supervisor = create_orchestrator()
     output = supervisor.run(BIRTHDAY_EMAIL)
-    approval.assert_called_once_with(draft["text"])
-    assert stages == ["Supervisor", "decision making agent", "Supervisor", "writer agent", "writer agent"]
+    assert approval.call_count == 2
+    assert approval.call_args_list[0].args == (supervisor.event_data["plan_approval"]["content"],)
+    assert approval.call_args_list[1].args == (draft["text"],)
+    assert supervisor.event_data["plan_approval"]["approved"] is True
+    assert "Approuvez-vous ce plan global" in approval.call_args_list[0].args[0]
+    assert stages == ["Supervisor", "decision making agent", "Supervisor", "writer agent"]
     assert supervisor.event_data["venue"]
     assert supervisor.event_data["documents"] == [{"content": draft["text"], "approved": approved}]
     assert supervisor.last_status == ("success" if approved else "partial")
