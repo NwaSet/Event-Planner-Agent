@@ -334,9 +334,11 @@ The data is fictional and intended for testing and demonstration.
 
 ## 7. Memory and Database
 
-Each `Supervisor.run(request)` creates a fresh `EventRun` containing an `event_data` dictionary: request, requirements, planning, budget, venue, catering, providers, documents and task statuses. Python alone updates validated results. Detailed catalogues stay local and are loaded once per run. A task's terminal status reuses its result or error; paraphrasing a delegation does not rerun a specialist. There is no separate context cache or dependency graph.
+Each `Supervisor.run(request)` creates a fresh `EventRun` containing an `event_data` dictionary: request, requirements, planning, budget, venue, catering, providers, documents and task statuses. Python alone updates validated results. Detailed catalogues stay local and are loaded once per run. Validated results and permanent failures are reused. A repairable failure permits one further attempt when relevant structured parameters or earlier decisions change; identical parameters or a paraphrased instruction do not rerun a specialist. A small per-task register stores only the attempt count and last relevant input. There is no result cache or dependency graph.
 
 The Supervisor directly calls `planning_agent(demande=...)`, `budgetary_agent(demande=...)`, `decision_making_agent(demande=..., category=...)` or `writer_agent(demande=...)`. The mandatory `configure_event` tool has been removed. Each delegation can optionally supply `requirements` with only new known constraints, and `tasks` to announce the requested scope. Neither is required to start. Python preserves the original request and injects only relevant earlier decisions. Without prepared candidates, Decision-Making uses its category's search tool before returning IDs.
+
+Preferences use a text format; dictionary input is normalized to compact JSON text without losing information. They remain soft wishes, separate from mandatory event type, headcount, budget and schedule. Explicit student-party wording is preserved as `soiree_etudiante`. Searches apply mandatory constraints before limiting results and expose the applied filters and truncation. Catalogue order is not a qualitative ranking. A refined search replaces earlier selectable candidates. In the current data, all seven Namur venues forbid student parties: the correct result is an explicit venue conflict, while independent catering/provider research can continue.
 
 An announced task list allows automatic stopping when all requested tasks are terminal; without it, the Supervisor can keep delegating and then finish naturally. Empty results never count as a successful event. A known limited budget requires Budgetary's allocation before selections; unknown or unlimited budgets need no allocation. A missing catering headcount can fail that task without blocking a venue recommendation. Errors do not cascade to independent tasks.
 
@@ -355,7 +357,9 @@ supervisor = create_orchestrator(
 result = supervisor.run("Organise une soirée à Namur sans limite de budget.")
 ```
 
-One correction is allowed for an invalid structured answer. Provider errors, `content_filter` and explicit refusals are distinguished from invalid JSON and are not repaired by reprompting. Identical `tool_use_failed` requests are not retried. Once announced tasks reach terminal states, or progress stops, a final turn without tools uses the remaining global budget. If finalization fails, Python returns the validated results and unresolved tasks. CLI exit code `0` means success, `2` a partial result, and `1` a configuration/execution failure.
+One correction is allowed for an invalid structured answer. Provider errors, `content_filter` and explicit refusals are distinguished from invalid JSON and are not repaired by reprompting. Identical `tool_use_failed` requests are not retried. Once announced tasks are finished, or a limit stops progress, the Supervisor returns the verified Python summary without a redundant LLM synthesis. If it finishes naturally without another tool call, its final text is also replaced by the verified summary. Standalone specialists retain their final turn when necessary, within the shared budget. CLI exit code `0` means success, `2` a partial result, and `1` a configuration/execution failure.
+
+The user summary displays local dates and times, venue and supplier names, offer descriptions, calculated amounts and unresolved tasks. Venue exclusivities are shown as authorized supplier names instead of a JSON object. Internal IDs remain in `event_data`; missing catalogue references are explicitly marked for verification. Availability and incomplete pricing remain conditional.
 
 The existing positional calls `Agent.run(request)` and `Agent.as_tool(name, description)` remain valid. Optional keyword arguments connect validation, shared counters and completion checks. Decision-Making delegation now requires `category` (`venue`, `catering`, `provider`) alongside `demande`; all public catalogue function signatures are unchanged.
 
@@ -502,7 +506,7 @@ Run all tests without paid calls:
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-Tests block network access and mock LLM/API responses. They cover direct delegations without configuration, Namur, partial Planning failure, limited budgets, venue exclusivities, reversed ordering, deadlines/logistics, invalid outputs, duplicate work, limits, finalization, successive independent runs and email refusal. The mocked Namur scenario completes in 8 LLM calls and 4 delegations; this is a deterministic regression check, not a real-provider token benchmark. See `To Do.md` for executed checks and remaining real-LLM validation.
+Tests block network access and mock LLM/API responses. They cover direct delegations without configuration, Namur, partial Planning failure, limited budgets, venue exclusivities, reversed ordering, deadlines/logistics, invalid outputs, duplicate work, limits, presentation, successive independent runs and email refusal. The mocked Namur scenario completes in 7 LLM calls and 4 delegations after removing the redundant synthesis call; this is a deterministic regression check, not a real-provider token benchmark. See `To Do.md` for executed checks and remaining real-LLM validation.
 
 ---
 

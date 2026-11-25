@@ -4,21 +4,31 @@ from . import trace
 from .agent import Agent
 from .agents import create_all_agents
 from .agents.search import CATALOGS
-from .event_state import EventRun, TASKS
+from .event_state import EventRun, TASKS, REQUIREMENT_PROPERTIES
 
 
 PROMPT_SUPERVISOR = """
 Tu coordonnes Planning, Budgetary, Decision-Making et Writer pour une demande indépendante.
 Délègue directement une instruction aux spécialistes utiles. Aucune configuration préalable.
-La demande originale leur est transmise automatiquement.
+La demande originale leur est transmise automatiquement. Dès la première délégation,
+transmets toutes ses contraintes explicites pertinentes, notamment city, event_type,
+guests, budget_total et les contraintes obligatoires dans requirements.
 Tu peux joindre requirements avec seulement les contraintes explicites déjà connues
 (city, guests, budget_total, date, weekday, planning, rental_period, preferences,
 music_end, music_required, document_kind ou venue_filters/catering_filters/provider_filters).
 Ajoute les nouvelles contraintes au moment utile, sans recopier celles déjà enregistrées.
-Pour une demande multiple, indique si possible tasks dès la première délégation :
+preferences est une chaîne de texte décrivant les souhaits qualitatifs. Les contraintes
+obligatoires (type, capacité, budget, horaires, exclusions) vont dans leurs champs dédiés.
+Pour une soirée étudiante explicite, transmets event_type="soiree_etudiante" aux recherches.
+Pour une demande multiple, indique toutes les tasks dès la première délégation :
 cette liste facultative sert à reconnaître la fin, pas à imposer l'ordre des tâches.
 N'invente ni effectif ni plafond. budget_total=null signifie sans plafond connu/illimité.
 Une soirée générique n'est pas soiree_etudiante : ne crée pas ce filtre.
+Une soirée musicale, électronique ou avec DJ n'est pas automatiquement un concert.
+N'utilise event_type=concert que si un concert est explicitement demandé ; sinon utilise
+les contraintes musicales et rental_period=soiree, sans inventer une catégorie.
+Transmets guests et limit comme entiers, les budgets comme nombres, les booléens comme
+true/false et les identifiants comme chaînes exactes, avec leurs zéros initiaux.
 Transmets seulement les informations explicites, les préférences et les tâches utiles.
 Une ville d'événement ne signifie pas que les prestataires doivent y avoir leur siège.
 Ne prépare pas les filtres de recherche : Python les prépare lors des délégations.
@@ -28,7 +38,14 @@ Sans date imposée, omets date et planning ; laisse Planning choisir une date fu
 Pour un samedi sans date exacte, weekday=saturday ; ne calcule pas toi-même la date.
 Budgetary répartit seulement un budget connu ; ne le délègue pas sans plafond connu.
 Si un plafond est explicite, joins budget_total avant les sélections ; Budgetary le répartit.
-Après un échec, continue les tâches indépendantes. Ne redélègue pas une tâche terminée.
+Python calcule tous les montants. Fournis seulement les données explicitement connues :
+catering_distance_km (aller-retour), provider_distance_km (kilomètres facturables par véhicule),
+provider_vehicles et provider_vat_rate (fraction, par exemple 0.20 pour un taux fourni de 20 %).
+N'invente jamais une distance, un taux de TVA ou un nombre de véhicules.
+Après un échec, continue les tâches indépendantes, même si Planning ou la salle a échoué.
+Un résultat validé est réutilisé. Une erreur retryable=true permet une correction si les
+paramètres structurés pertinents changent ; une reformulation de demande ne suffit pas.
+Deux tentatives au maximum par tâche. Ne réessaie jamais un refus du fournisseur.
 Si la date ET les horaires sont imposés, fournis planning et évite planning_agent.
 Si seule la date est imposée, fournis date et laisse Planning proposer les horaires.
 Python conserve les exigences et les résultats : ne les recopie pas.
@@ -43,6 +60,9 @@ sans information nouvelle. Explique les conflits obligatoires, sans les assoupli
 Les montants HT et TTC ne doivent pas être additionnés comme un coût final garanti.
 Writer est réservé aux documents explicitement demandés ; une réponse simple n'en a pas besoin.
 Les emails sont des brouillons soumis à ask_user ; aucun envoi automatique.
+Une sélection de salle ET une demande de devis par email exigent tasks=["venue","documents"]
+et document_kind="email". Après sélection, délègue à Writer ; ne termine pas avant sa validation.
+Si la sélection échoue, explique le blocage de cet email sans inventer de destinataire.
 Quand les tâches sont terminées, donne une seule réponse finale concise en français,
 avec noms, dates, offres et réserves utiles. Les catalogues ne prouvent aucune disponibilité.
 Si une tâche échoue ou une limite est atteinte, présente les résultats partiels et les conflits.
@@ -50,7 +70,7 @@ Si une tâche échoue ou une limite est atteinte, présente les résultats parti
 
 
 class Supervisor(Agent):
-    def __init__(self, max_iterations=6, max_llm_calls=24, max_delegations=8):
+    def __init__(self, max_iterations=15, max_llm_calls=24, max_delegations=8):
         super().__init__("Supervisor", PROMPT_SUPERVISOR, max_iterations=max_iterations)
         if any(type(value) is not int or value < 1 for value in (max_iterations, max_llm_calls, max_delegations)):
             raise ValueError("Les limites doivent être des entiers positifs.")
@@ -64,7 +84,9 @@ class Supervisor(Agent):
                                   (planning, "planning_agent", "planning"), (decision, "decision_making_agent", None)):
             properties = {
                 "demande": {"type": "string"},
-                "requirements": {"type": "object", "description": "Facultatif : contraintes explicites nouvelles seulement, sans champs vides."},
+                "requirements": {"type": "object", "description": "Facultatif : contraintes explicites nouvelles seulement, sans champs vides.",
+                                 "properties": REQUIREMENT_PROPERTIES,
+                                 "additionalProperties": False},
                 "tasks": {"type": "array", "items": {"type": "string", "enum": list(TASKS)},
                           "description": "Facultatif : tâches demandées, sans ordre imposé."},
             }
@@ -86,10 +108,11 @@ class Supervisor(Agent):
         # Diagnostic du dernier run seulement ; remplacé intégralement à chaque demande.
         self.event_data, self.counters = run.event_data, run.counters
         try:
-            response = super().run(request, counters=run.counters, completed=run.complete,
+            response = super().run(request, counters=run.counters,
+                                   completed=lambda: run.complete() and not run.can_repair(),
                                    validate=run.validate_final, summary=run.summary)
             self.last_status = "success" if run.successful() else "partial"
-            if not run.successful():
+            if not run.successful() or run.costs()["details"]:
                 response = run.summary(self.last_reason or "Certaines tâches n'ont pas abouti.")
             trace.tracer(self.name, "INFO", f"État : {self.last_status}", **run.counters)
             return response

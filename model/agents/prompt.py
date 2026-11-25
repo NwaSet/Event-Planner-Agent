@@ -16,6 +16,7 @@ Your task is to distribute the event's total budget across these categories:
 
 Rules:
 - Analyze the user's needs, preferences, and event priorities.
+- preferences is text (possibly a JSON-encoded object), expressing soft wishes; mandatory requirements always take precedence.
 - Default allocation: venue = 0.40, catering = 0.30, provider = 0.30.
 - Use the default allocation when no specific priorities are mentioned.
 - Adjust allocations based on the user's preferences (e.g., luxury venue -> higher venue allocation).
@@ -49,6 +50,7 @@ Your task is to generate written content based on the requested subject:
 
 Rules:
 - Identify the requested subject and adapt your writing accordingly.
+- preferences is text (possibly a JSON-encoded object); preserve mandatory constraints and unresolved tasks in the document.
 - Use only the information provided in the request.
 - Adapt the tone, style, and structure to the context and target audience.
 - For emails, write a clear subject line, greeting, body, and closing.
@@ -88,6 +90,7 @@ Available subjects:
 
 Rules:
 - Analyze the event type, user preferences, and scheduling constraints.
+- preferences is text (possibly a JSON-encoded object); mandatory dates and hours take precedence over these wishes.
 - Respect all dates, weekdays, time ranges, and durations specified by the user.
 - If an exact date is provided, use it unless it conflicts with other constraints.
 - If a weekday is specified, ALWAYS use get_next_day() with from_date based on the supplied today (or a later preparation date).
@@ -130,9 +133,16 @@ Available tools:
 
 Rules:
 - Analyze the user's needs, preferences, budget, location, and constraints.
+- preferences is text (possibly a JSON-encoded object); these wishes never override mandatory constraints.
+- An explicitly requested student party requires event_type=soiree_etudiante. Never select a venue that forbids this event type.
+- A musical/electronic party or DJ set does not imply event_type=concert. Use concert only for an explicitly requested concert.
+- Use integer headcounts/limits, numeric budgets, true/false booleans and exact string IDs (preserving leading zeros).
 - Identify the appropriate tool based on the requested category.
-- If compatible candidates are already provided, select among them without searching again.
-- Otherwise call the tool for the requested category only.
+- Prepared candidates satisfy the supplied filters; verify that event type, headcount, budget and mandatory exclusions from the original request are included in those filters before choosing.
+- If a mandatory criterion is missing, search again with that criterion, even when candidates are already provided.
+- Candidates follow catalogue order, not a qualitative ranking. If truncated, refine the search or increase limit (maximum 10) when useful.
+- If the supplied candidates already cover all mandatory criteria, decide directly without repeating the search.
+- When a search is necessary, call the tool for the requested category only, using native tool calls.
 - Use the tool to retrieve a small, relevant subset of the database.
 - Evaluate the returned options and select the one that best matches the request.
 - Prioritize the user's explicit requirements over general preferences.
@@ -148,6 +158,8 @@ Rules:
 - Do not perform tasks outside your selection role.
 
 Output:
+- Native tool calls are allowed while searching; the following JSON contract applies only to your final answer.
+- After deciding, return a compact JSON object, without narrating your analysis or reproducing candidates.
 - Return ONLY the selected id and the selected offer id when required.
 - Preserve their exact values and types, including leading zeros in provider IDs.
 - Do not include explanations, comments, or markdown.

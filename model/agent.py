@@ -2,7 +2,7 @@ import json
 
 from model import trace
 from model.llm import (chat, lire_arguments, message_assistant, tool_message,
-                       tool_schema, count_llm_call, run_counters, ErreurLLM)
+                       tool_schema, count_llm_call, run_counters, ErreurLLM, SortieInterrompue)
 
 
 class Agent:
@@ -16,16 +16,16 @@ class Agent:
         # descriptions envoyées au modèle
         self.schemas = [schema for _, schema in tools]
 
-    def run(self, request, *, counters=None, validate=None, completed=None, summary=None):
+    def run(self, request, *, counters=None, validate=None, completed=None, summary=None, compact_output=False):
         """Traite une demande et renvoie la réponse finale (texte)."""
         token = run_counters.set(counters) if counters is not None else None
         try:
-            return self._run(request, validate, completed, summary)
+            return self._run(request, validate, completed, summary, compact_output)
         finally:
             if token is not None:
                 run_counters.reset(token)
 
-    def _run(self, request, validate, completed, summary):
+    def _run(self, request, validate, completed, summary, compact_output):
         messages = [
             {"role": "system", "content": self.instructions},
             {"role": "user", "content": request},
@@ -44,13 +44,28 @@ class Agent:
         for _ in range(self.max_iterations):
             try:
                 count_llm_call()
-                message = chat(messages, tools=self.schemas or None, agent=self.name)
+                message = chat(messages, tools=None if compact_output and corrections else self.schemas or None, agent=self.name)
+            except SortieInterrompue as error:
+                reason = str(error)
+                self.last_error_code = "interrupted_output"
+                if compact_output and corrections < 1:
+                    corrections += 1
+                    messages.append({"role": "user", "content": reason +
+                        ". Retournez uniquement l'objet JSON compact de sélection parmi les candidats fournis. Aucun outil ni explication."})
+                    continue
+                allow_final = False
+                break
             except ErreurLLM as error:
                 reason = str(error)
                 self.last_error_code = "llm_error"
                 allow_final = False
                 break
 
+            if compact_output and corrections and message.tool_calls:
+                reason = "Réparation invalide : un objet JSON final est attendu, sans appel d'outil."
+                self.last_error_code = "invalid_output"
+                allow_final = False
+                break
             # Pas d'outil demandé : c'est la réponse finale
             if not message.tool_calls:
                 texte = message.content or ""
@@ -63,15 +78,20 @@ class Agent:
                         raise ValueError("Tâches encore incomplètes : poursuivez les délégations utiles.")
                 except (ValueError, TypeError, KeyError) as error:
                     reason = f"Sortie invalide : {error}"
+                    trace.tracer(self.name, "INFO", reason, code="invalid_output")
                     self.last_error_code = "invalid_output"
                     if corrections >= 1:
                         allow_final = False
                         break
                     corrections += 1
                     messages.extend([{"role": "assistant", "content": texte},
-                                     {"role": "user", "content": reason + " Corrigez une seule fois."}])
+                                     {"role": "user", "content": reason + " Corrigez une seule fois." +
+                                      (" Retournez uniquement l'objet JSON compact de sélection parmi les candidats fournis. Aucun outil ni explication."
+                                       if compact_output else "")}])
                     continue
                 self.last_status = "success"
+                if summary:
+                    texte = summary("Certaines tâches n'ont pas abouti.")
                 trace.response(self.name, texte)
                 return texte
 
@@ -109,21 +129,17 @@ class Agent:
                 reason = "Arrêt : appels répétés sans information nouvelle."
                 break
 
-        # Un dernier tour sans outils restitue notamment les observations du dernier tour.
-        # Il utilise le même budget global, jamais un nouveau compteur.
+        # Le bilan Python du Supervisor est déjà validé : aucune réécriture LLM.
+        # Un spécialiste sans bilan conserve son dernier tour de restitution.
         self.last_status = "partial"
         self.last_reason = reason
         if summary:
-            snapshot = summary(reason)
-            final_messages = [messages[0], {"role": "user", "content":
-                "Rédigez maintenant la réponse finale à partir de ce bilan vérifié. "
-                "Aucun nouvel outil ni nouvelle décision. Préservez les réserves et les échecs.\n" + snapshot}]
-        else:
-            snapshot = json.dumps({"status": "partial", "reason": reason,
-                                   "observations": observations}, ensure_ascii=False)
-            final_messages = messages + [{"role": "user", "content":
-                "Restituez les résultats obtenus. Aucun nouvel outil. Si incomplet, dites-le explicitement."}]
-        if not allow_final:
+            return summary(reason)
+        snapshot = json.dumps({"status": "partial", "reason": reason,
+                               "observations": observations}, ensure_ascii=False)
+        final_messages = messages + [{"role": "user", "content":
+            "Restituez les résultats obtenus. Aucun nouvel outil. Si incomplet, dites-le explicitement."}]
+        if not allow_final or (compact_output and corrections):
             return snapshot
         try:
             count_llm_call()
@@ -139,9 +155,8 @@ class Agent:
             return final.content
         except (ErreurLLM, ValueError, TypeError, KeyError) as error:
             self.last_reason = str(error)
-            self.last_error_code = "llm_error" if isinstance(error, ErreurLLM) else "invalid_output"
-            if summary:
-                return summary(str(error))
+            self.last_error_code = ("interrupted_output" if isinstance(error, SortieInterrompue)
+                                    else "llm_error" if isinstance(error, ErreurLLM) else "invalid_output")
             return snapshot
 
     def execute_tool(self, appel):

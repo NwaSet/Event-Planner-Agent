@@ -2,11 +2,14 @@
 
 import json
 import math
+import re
 from copy import deepcopy
-from datetime import date
+from datetime import date, datetime
 
 from .agents import tools
-from .agents.search import CATALOGS, check_schedule, compact_tool, load_catalogs, search_candidates, compatible
+from .finance import FINANCIAL_FIELDS, amount, money, venue_cost, catering_cost, provider_cost, financial_lines
+from .agents.search import (CATALOGS, check_schedule, compact_tool, load_catalogs, search_candidates,
+                            compatible, normalize_arguments, event_type_error)
 
 
 TASKS = ("planning", "budget", "venue", "catering", "provider", "documents")
@@ -24,6 +27,10 @@ REQUIREMENT_PROPERTIES = {
     "music_end": {"type": "string", "description": "Fin de musique imposée YYYY-MM-DDTHH:MM si distincte."},
     "preferences": {"type": "string"}, "assumptions": {"type": "string"},
     "document_kind": {"type": "string", "enum": ["email", "synthesis"]},
+    "catering_distance_km": {"type": "number"},
+    "provider_distance_km": {"type": "number"},
+    "provider_vehicles": {"type": "integer"},
+    "provider_vat_rate": {"type": "number"},
     **{category + "_filters": schema["function"]["parameters"]
        for category, (_, _, schema, _) in CATALOGS.items()},
 }
@@ -31,6 +38,29 @@ REQUIREMENT_PROPERTIES = {
 
 def encode(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def describe_filters(filters):
+    labels = {"city": "ville", "province": "province", "event_type": "type d'événement",
+              "guests": "effectif", "max_budget": "plafond en EUR", "rental_period": "location",
+              "ids": "identifiants autorisés", "accessible": "accès PMR", "seated": "places assises",
+              "space_type": "espace", "caterer_id": "traiteur imposé", "provider_id": "prestataire imposé"}
+
+    def display(value):
+        if isinstance(value, list):
+            return ", ".join(display(item) for item in value) or "aucun"
+        if isinstance(value, bool):
+            return "oui" if value else "non"
+        return {"soiree_etudiante": "soirée étudiante", "soiree": "soirée", "journee": "journée"}.get(
+            str(value), str(value).replace("_", " "))
+
+    return "; ".join(f"{labels.get(key, key.replace('_', ' '))} : {display(value)}"
+                     for key, value in filters.items() if key != "limit") or "critères demandés"
+
+
+def normalize_preferences(value):
+    """Un seul format transmis aux agents : texte, sans perdre les clés d'un objet."""
+    return encode(value) if isinstance(value, dict) else value
 
 
 class TaskImpossible(Exception):
@@ -52,6 +82,36 @@ class EventRun:
                            "budget": None, "venue": None, "catering": None,
                            "providers": [], "documents": [], "tasks": {}}
         self.catalogs = load_catalogs()
+        # Garde-fou ciblé : conserver une catégorie explicitement nommée dans la demande.
+        # Les autres interprétations et les choix qualitatifs restent confiés aux agents.
+        wording = tools._normalize(request)
+        student_event = r"\b(?:soirees? etudiantes?|evenements? etudiants?)\b"
+        if re.search(student_event, wording) and not re.search(
+                r"\b(?:pas|sans|hors|non) (?:une? |de |des? )?" + student_event, wording):
+            self.event_data["requirements"]["event_type"] = "soiree_etudiante"
+        # Filet ciblé pour les faits littéraux omis par le Supervisor. Pas de choix
+        # qualitatif ni d'interprétation des formulations ambiguës ici.
+        req = self.event_data["requirements"]
+        cities = {row["lieux"]["commune"] for row in self.catalogs["venue"]} if isinstance(self.catalogs["venue"], list) else set()
+        mentioned = [city for city in cities
+                     if re.search(r"\ba\s+" + re.escape(tools._normalize(city)) + r"\b", wording)
+                     and not re.search(r"\b(?:pas|sauf)\s+a\s+" + re.escape(tools._normalize(city)) + r"\b", wording)]
+        if len(mentioned) == 1:
+            req["city"] = mentioned[0]
+        headcounts = re.findall(r"\b(?:pour|de)\s+(\d+)\s+(?:personnes|invites|participants)\b", wording)
+        if len(set(headcounts)) == 1 and int(headcounts[0]) > 0:
+            req["guests"] = int(headcounts[0])
+        if re.search(r"\bpour (?:un |une? )?anniversaire\b", wording):
+            req.setdefault("event_type", "anniversaire")
+        # Une rédaction explicitement demandée ne peut disparaître de la liste des tâches.
+        email_requested = re.search(r"\b(?:redige|rediger|ecris|ecrire|prepare|preparer)\s+(?:un |une? |l')?(?:e-?mail|courriel)\b", wording)
+        if email_requested and not re.search(r"\b(?:ne|pas|sans)\s+(?:\w+\s+){0,2}(?:redige|rediger|ecris|ecrire|prepare|preparer)\b", wording):
+            req["document_kind"] = "email"
+            self.event_data["tasks"]["documents"] = {"status": "pending"}
+            if re.search(r"\b(?:une|la) salle\b", wording):
+                self.event_data["tasks"]["venue"] = {"status": "pending"}
+        # Un compteur et le dernier contexte utile par tâche, sans cache de résultats.
+        self.attempts = {}
         self.scope_declared = False
         self.today = date.today().isoformat()
         self.counters = {"llm_calls": 0, "delegations": 0,
@@ -63,17 +123,44 @@ class EventRun:
             return
         if requirements is None:
             requirements = {}
-        if not isinstance(requirements, dict) or set(requirements) - set(REQUIREMENT_PROPERTIES):
-            raise ValueError("Champs d'exigences inconnus.")
         if tasks is not None and (not isinstance(tasks, list) or not tasks or any(task not in TASKS for task in tasks)):
             raise ValueError("tasks : liste non vide de tâches connues attendue.")
+        # Une erreur locale ne doit pas faire oublier les autres tâches annoncées.
+        if tasks is not None:
+            self.scope_declared = True
+            for task in tasks:
+                self.event_data["tasks"].setdefault(task, {"status": "pending"})
+        if not isinstance(requirements, dict) or set(requirements) - set(REQUIREMENT_PROPERTIES):
+            raise ValueError("Champs d'exigences inconnus.")
+        requirements = normalize_arguments(requirements, REQUIREMENT_PROPERTIES)
+        if "preferences" in requirements:
+            requirements["preferences"] = normalize_preferences(requirements["preferences"])
+        if isinstance(requirements.get("event_type"), str):
+            requirements["event_type"] = tools._normalize(requirements["event_type"]).replace(" ", "_")
+        for field, filters in requirements.items():
+            if field.endswith("_filters") and isinstance(filters, dict):
+                filters = normalize_arguments(filters, CATALOGS[field[:-8]][2]["function"]["parameters"]["properties"])
+                requirements[field] = filters
+                if isinstance(filters.get("event_type"), str):
+                    filters["event_type"] = tools._normalize(filters["event_type"]).replace(" ", "_")
+        problem = event_type_error(requirements.get("event_type"), self.event_data["request"])
+        if problem:
+            raise ValueError(problem)
         previous = self.event_data["requirements"]
         requirements = {key: value.strip() if isinstance(value, str) else value
                         for key, value in deepcopy(requirements).items()
                         if value is not None and not (REQUIREMENT_PROPERTIES[key]["type"] == "string"
                                                      and isinstance(value, str) and not value.strip())}
         for key, value in requirements.items():
-            if key in previous and previous[key] != value:
+            if (key in ("city", "province") and key in previous and isinstance(value, str)
+                    and tools._normalize(previous[key]) == tools._normalize(value)):
+                requirements[key] = value = previous[key]
+            if key.endswith("_filters") and isinstance(value, dict) and isinstance(previous.get(key), dict):
+                if any(field in previous[key] and previous[key][field] != content for field, content in value.items()):
+                    raise ValueError(f"Contrainte déjà enregistrée : {key}.")
+                requirements[key] = value = {**previous[key], **value}
+                continue
+            if key in previous and previous[key] != value and key != "preferences":
                 raise ValueError(f"Contrainte déjà enregistrée : {key}.")
         requirements = {**previous, **requirements}
         for key, value in requirements.items():
@@ -85,6 +172,14 @@ class EventRun:
             if "enum" in REQUIREMENT_PROPERTIES[key] and value not in REQUIREMENT_PROPERTIES[key]["enum"]:
                 raise ValueError(f"Valeur invalide pour {key}.")
         guests, total = requirements.get("guests"), requirements.get("budget_total")
+        for field in FINANCIAL_FIELDS:
+            value = requirements.get(field)
+            if value is not None and (type(value) not in (int, float) or not math.isfinite(value) or value < 0):
+                raise ValueError(f"Valeur financière invalide : {field}.")
+        if "provider_vehicles" in requirements and (type(requirements["provider_vehicles"]) is not int or requirements["provider_vehicles"] < 1):
+            raise ValueError("provider_vehicles : entier positif attendu.")
+        if requirements.get("provider_vat_rate", 0) > 1:
+            raise ValueError("provider_vat_rate : fraction entre 0 et 1 attendue, jamais un taux supposé.")
         if guests is not None and (type(guests) is not int or guests < 1):
             raise ValueError("Effectif invalide.")
         if total is not None and (type(total) not in (int, float) or not math.isfinite(total) or total < 0):
@@ -93,7 +188,11 @@ class EventRun:
             filters = requirements.get(category + "_filters", {})
             if not isinstance(filters, dict):
                 raise ValueError("Filtres attendus sous forme d'objet.")
+            filters = normalize_arguments(filters, CATALOGS[category][2]["function"]["parameters"]["properties"])
             cleaned, problem = tools._validate_filters(filters, CATALOGS[category][2])
+            if problem:
+                raise ValueError(problem)
+            problem = event_type_error(cleaned.get("event_type"), self.event_data["request"])
             if problem:
                 raise ValueError(problem)
             # Garder ids=[] : c'est une contrainte impossible, pas une absence de filtre.
@@ -122,10 +221,6 @@ class EventRun:
         except (ValueError, TypeError, KeyError):
             self.event_data["requirements"] = previous
             raise
-        if tasks is not None:
-            self.scope_declared = True
-            for task in tasks:
-                self.event_data["tasks"].setdefault(task, {"status": "pending"})
         if total is not None and any(category in self.event_data["tasks"] for category in CATALOGS):
             self.event_data["tasks"].setdefault("budget", {"status": "pending"})
         if requirements.get("document_kind"):
@@ -215,6 +310,8 @@ class EventRun:
             return result
         if task == "documents":
             context = self.consolidated()
+            context["request"] = self.event_data["request"]
+            context["contact_note"] = "Aucune coordonnée de contact dans le catalogue ; ne pas inventer d'adresse email. Brouillon uniquement."
             context.pop("documents")
             context["tasks"].pop("documents", None)
             return context
@@ -246,6 +343,7 @@ class EventRun:
             allocated = round(total * self.event_data["budget"][task], 2)
             filters["max_budget"] = min(filters.get("max_budget", allocated), allocated)
         return {"filters": filters, "planning": self.event_data["planning"], "date": req.get("date"),
+                "financial": {key: req[key] for key in FINANCIAL_FIELDS if key.startswith(task + "_") and key in req},
                 "request": self.event_data["request"],
                 "venue": venue if task != "venue" else None, "today": self.today,
                 "music_required": req.get("music_required", True), "music_end": req.get("music_end"),
@@ -279,11 +377,20 @@ class EventRun:
         try:
             self.remember(requirements, tasks)
         except (ValueError, TypeError, KeyError, TaskImpossible) as error:
+            reused = self.begin_attempt(task, {"invalid_requirements": requirements, "tasks": tasks})
+            if reused:
+                return reused
             return self.record(task, {"status": "error", "error": str(error), "code": "invalid_requirements"})
-        previous = self.event_data["tasks"].get(task)
-        if previous and previous["status"] != "pending":
-            return {"status": "reused", "task": task, "outcome": previous["status"]}
         self.event_data["tasks"].setdefault(task, {"status": "pending"})
+        if (task == "documents" and self.event_data["requirements"].get("document_kind") == "email"
+                and "venue" in self.event_data["tasks"] and not self.event_data["venue"]):
+            venue_status = self.event_data["tasks"]["venue"]["status"]
+            if venue_status == "pending":
+                return {"status": "not_ready", "task": task, "requires": "venue"}
+            reused = self.begin_attempt(task, {"venue": None})
+            if reused:
+                return reused
+            return self.record(task, {"status": "blocked", "error": "Email bloqué : aucune salle sélectionnée ; destinataire inconnu."})
         if task == "budget" and self.event_data["requirements"].get("budget_total") is None:
             return self.record(task, {"status": "skipped", "reason": "Aucun plafond connu : répartition inutile."})
         # Seul un plafond connu exige une répartition avant les achats multiples.
@@ -296,7 +403,18 @@ class EventRun:
         try:
             context = self.context(task)
         except (ValueError, TypeError, KeyError) as error:
+            reused = self.begin_attempt(task, {"invalid_requirements": self.event_data["requirements"]})
+            if reused:
+                return reused
             return self.record(task, {"status": "error", "error": str(error), "code": "invalid_requirements"})
+        # Ignorer les reformulations de demande ; comparer les paramètres structurés
+        # et les décisions dont la tâche dépend réellement (date, budget, salle...).
+        relevant = {key: value for key, value in context.items() if key not in ("request", "today")}
+        if relevant.get("venue"):
+            relevant["venue"] = relevant["venue"]["id"]
+        reused = self.begin_attempt(task, relevant)
+        if reused:
+            return reused
         if self.counters["delegations"] >= self.counters["max_delegations"]:
             return self.record(task, {"status": "limit", "error": "Limite globale de délégations atteinte."})
         payload = {"task": task, "demande": demande, **context}
@@ -310,15 +428,18 @@ class EventRun:
                       if context["filters"] or context.get("venue") else {"status": "needs_search", "candidates": []})
             if result["status"] not in ("matched", "needs_search"):
                 if task == "venue" and result["status"] == "no_match":
-                    result["error"] = "Aucune salle ne respecte les contraintes et la compatibilité des services demandés."
+                    result["error"] = ("Aucune salle compatible avec les contraintes obligatoires ("
+                                       + describe_filters(context["filters"]) + ") et les services demandés. Disponibilité non vérifiée.")
                 outcome = self.record(task, {"status": result["status"], "error": result.get("error", "Recherche impossible.")})
                 return outcome
             proposed = list(result["candidates"])
+            selection_filters = dict(context["filters"])
             payload["search"] = result
             if payload.get("venue"):
                 payload["venue"] = {key: payload["venue"][key] for key in ("id", "lieux", "equipements", "contraintes")}
 
             def search(**extra):
+                extra = normalize_arguments(extra, CATALOGS[task][2]["function"]["parameters"]["properties"])
                 for key, value in context["filters"].items():
                     if key != "limit" and key in extra and extra[key] != value:
                         return {"status": "invalid_filters", "error": f"Contrainte fixée : {key}."}
@@ -326,7 +447,11 @@ class EventRun:
                 if result["candidates"] and {"limit": 5, **requested} == {"limit": 5, **context["filters"]}:
                     return {"status": "reused", "source": "search.candidates dans le contexte initial"}
                 found = search_candidates(task, requested, catalogs=self.catalogs, context=context, accept=accept)
-                proposed.extend(found["candidates"])
+                # Une recherche corrigée remplace les anciens candidats : ils peuvent
+                # ne plus respecter le type, la capacité ou les exclusions précisés.
+                proposed[:] = found["candidates"]
+                selection_filters.clear()
+                selection_filters.update(found.get("filters", requested))
                 return found
 
             _, schema = compact_tool(task)
@@ -367,7 +492,8 @@ class EventRun:
         is_email = task == "documents" and self.event_data["requirements"].get("document_kind") == "email"
         try:
             output = agent.run(encode(payload), counters=self.counters, validate=validate,
-                               completed=(lambda: bool(approval)) if is_email else None)
+                               completed=(lambda: bool(approval)) if is_email else None,
+                               compact_output=task in CATALOGS and bool(proposed))
             if task == "documents" and approval and not approval["approved"]:
                 outcome = {"status": "refused", "error": "Brouillon d'email refusé ; aucun envoi.",
                            "result": {"content": approval["content"], "approved": False}}
@@ -383,11 +509,46 @@ class EventRun:
                        "code": "impossible" if isinstance(error, TaskImpossible) else "execution_error"}
         finally:
             agent.fonctions, agent.schemas = original_functions, original_schemas
+        if task in CATALOGS and outcome["status"] == "success":
+            # Conserver les paramètres réellement utilisés pour calculer le choix validé.
+            self.event_data["requirements"][task + "_filters"] = {
+                key: value for key, value in selection_filters.items() if key != "limit"}
         outcome = self.record(task, outcome)
         return outcome
 
+    def begin_attempt(self, task, relevant):
+        """Deux tentatives au plus, la seconde seulement si le contexte utile change."""
+        previous = self.event_data["tasks"].get(task, {})
+        attempt = self.attempts.get(task, {"count": 0, "input": None})
+        if previous.get("status") not in (None, "pending"):
+            reason = None
+            if not previous.get("retryable", False):
+                reason = "Résultat validé ou erreur permanente pour cette exécution."
+            elif attempt["count"] >= 2:
+                reason = "Limite de deux tentatives atteinte."
+            elif relevant == attempt["input"]:
+                reason = "Paramètres pertinents inchangés ; aucune nouvelle tentative."
+            if reason:
+                return {"status": "reused", "task": task, "outcome": previous["status"],
+                        "retryable": previous.get("retryable", False), "code": previous.get("code"),
+                        "error_kind": previous.get("error_kind"),
+                        "reason": reason, **({"error": previous["error"]} if "error" in previous else {})}
+        self.attempts[task] = {"count": attempt["count"] + 1, "input": deepcopy(relevant)}
+        self.event_data["tasks"][task] = {"status": "pending"}
+        return None
+
+    def can_repair(self):
+        return any(outcome.get("retryable", False) and self.attempts.get(task, {}).get("count", 0) < 2
+                   for task, outcome in self.event_data["tasks"].items())
+
     def record(self, task, outcome):
-        outcome = {"task": task, **outcome}
+        if outcome.get("code") in ("invalid_output", "interrupted_output"):
+            outcome = {**outcome, "error_kind": "temporary_output"}
+        elif outcome.get("code") == "impossible" or outcome["status"] == "no_match":
+            outcome = {**outcome, "error_kind": "business_impossibility"}
+        retryable = (outcome["status"] in ("error", "no_match", "invalid_filters", "blocked")
+                     and outcome.get("code") != "llm_error")
+        outcome = {"task": task, **outcome, "retryable": retryable and self.attempts.get(task, {}).get("count", 0) < 2}
         self.event_data["tasks"][task] = {key: value for key, value in outcome.items() if key != "result"}
         if outcome["status"] == "success":
             field = {"provider": "providers", "documents": "documents"}.get(task, task)
@@ -431,20 +592,44 @@ class EventRun:
             value["status"] in ("success", "skipped") for value in self.event_data["tasks"].values())
 
     def costs(self):
-        req, known = self.event_data["requirements"], {}
+        req, known, details, missing = self.event_data["requirements"], {}, {}, []
+        deposit = 0
         for category in CATALOGS:
             row = self.selected_row(category)
             if not row:
                 continue
             if category == "venue":
-                period = tools._normalize(self.context("venue")["filters"].get("rental_period") or "journee")
-                known["venue_ttc"] = row["prix"][f"location_{period}_ttc"] + row["prix"]["nettoyage_obligatoire_ttc"]
-            elif category == "catering" and req.get("guests"):
-                known["catering_ttc"] = round(self.selection_details(category)["offer"]["prix_par_personne_ttc"] * req["guests"] + row["frais_supplementaires"]["livraison_forfait_ttc"], 2)
+                period = self.context("venue")["filters"].get("rental_period")
+                detail = venue_cost(row, tools._normalize(period) if period else None)
+                known["venue_ttc"], deposit = detail["known_ttc"], detail["deposit"]
+                if detail["period_assumed"]:
+                    missing.append("Période de location à confirmer : tarif journée utilisé par défaut, tarif soirée également indiqué.")
+            elif category == "catering":
+                detail = catering_cost(row, self.selection_details(category)["offer"],
+                                       self.context(category)["filters"].get("guests"), req.get("catering_distance_km"))
+                if detail["known_ttc"] is not None:
+                    known["catering_ttc"] = detail["known_ttc"]
+                else:
+                    missing.append("Effectif du repas à préciser.")
+                if detail["travel_ttc"] is None:
+                    missing.append("Kilométrage aller-retour du traiteur à confirmer, en supplément du forfait livraison.")
+                missing.append("Boissons et éventuel personnel supplémentaire à chiffrer.")
             elif category == "provider":
-                known["provider_ht"] = self.selection_details(category)["offer"]["prix_estime_eur_ht"]
+                detail = provider_cost(row, self.selection_details(category)["offer"], req)
+                known["provider_ht"] = detail["known_ht"]
+                if detail["known_ttc"] is not None:
+                    known["provider_ttc"] = detail["known_ttc"]
+                else:
+                    missing.append("Taux de TVA du prestataire à confirmer ; son montant HT est exclu du sous-total TTC.")
+                if detail["travel_ht"] is None:
+                    missing.append("Kilométrage facturable et nombre de véhicules du prestataire à confirmer.")
+            details[category] = detail
+        subtotal = sum((money(value) for key, value in known.items() if key.endswith("_ttc")), money(0))
         return {"known": known, "budget_total": req.get("budget_total"),
-                "allocations": ({key: round(req["budget_total"] * value, 2) for key, value in self.event_data["budget"].items()}
+                "details": details, "deposit": deposit, "known_ttc_subtotal": amount(subtotal),
+                "known_cash_required": amount(subtotal + money(deposit)), "missing": missing,
+                "known_over_budget": req.get("budget_total") is not None and subtotal > money(req["budget_total"]),
+                "allocations": ({key: amount(money(req["budget_total"]) * money(value)) for key, value in self.event_data["budget"].items()}
                                 if req.get("budget_total") is not None and self.event_data["budget"] else None),
                 "warning": "Coût total non confirmé : HT/TTC distincts, TVA prestataire, déplacements, boissons et personnel éventuels à chiffrer. Caution hors dépense."}
 
@@ -462,20 +647,30 @@ class EventRun:
         lines = ["Résultat " + ("consolidé." if self.successful() else "partiel. " + reason)]
         if self.event_data["planning"]:
             planning = self.event_data["planning"]
-            lines.append(f"Date proposée : du {planning['start']} au {planning['end']}.")
+            start, end = (datetime.fromisoformat(planning[key]).strftime("%d/%m/%Y à %H:%M") for key in ("start", "end"))
+            lines.append(f"Date proposée : du {start} au {end} (heure locale).")
         for category, label in (("venue", "Salle"), ("catering", "Traiteur"), ("provider", "Prestataire")):
             details = self.selection_details(category)
             if details:
                 offer = details.get("offer")
-                lines.append(f"{label} : {details['nom']} ({details['id']})" + (f", offre {offer['id']} : {offer.get('description', '')}" if offer else "") + ".")
+                location = details["lieux"]
+                location = location.get("commune", "") if isinstance(location, dict) else location
+                lines.append(f"{label} : {details['nom']}" + (f" — {location}" if location else "") + ".")
+                if offer:
+                    name = offer.get("nom") or f"Kit {offer['id']}"
+                    lines.append(f"  {name} : {offer.get('description', '').rstrip('.')}.")
         costs = self.costs()
-        if costs["budget_total"] is not None:
-            lines.append(f"Budget plafond : {costs['budget_total']} EUR ; allocations : {encode(costs['allocations'])}.")
-        if costs["known"]:
-            lines.append("Montants connus (EUR) : " + encode(costs["known"]) + ". " + costs["warning"])
+        lines.extend(financial_lines(costs))
+        labels = {"planning": "planning", "budget": "budget", "venue": "salle", "catering": "traiteur",
+                  "provider": "prestataire", "documents": "documents"}
         for task, outcome in self.event_data["tasks"].items():
             if outcome["status"] not in ("success", "skipped"):
-                lines.append(f"Non résolu — {task} : {outcome.get('error', 'tâche non terminée')}.")
+                unresolved = outcome.get("error", "tâche non terminée")
+                if (task == "documents" and outcome["status"] == "pending"
+                        and self.event_data["requirements"].get("document_kind") == "email"
+                        and "venue" in self.event_data["tasks"] and not self.event_data["venue"]):
+                    unresolved = "Email en attente : aucune salle sélectionnée ; destinataire inconnu"
+                lines.append(f"Non résolu — {labels.get(task, task)} : {unresolved.rstrip('.')}.")
         for document in self.event_data["documents"]:
             lines.append(("Brouillon refusé :\n" if document.get("approved") is False else "Document :\n") + document["content"])
         assumptions = self.event_data["requirements"].get("assumptions")
@@ -483,6 +678,18 @@ class EventRun:
             lines.append("Hypothèses : " + assumptions)
         venue = self.selected_row("venue")
         if venue:
-            lines.append("Contraintes de la salle : " + encode(venue["contraintes"]))
+            constraints = venue["contraintes"]
+            lines.append(f"Fin de la musique autorisée par la salle : {constraints['heure_fin_musique']}.")
+            for category, flag, ids_key, label in (
+                ("catering", "traiteur_impose", "traiteurs_autorises_ids", "Traiteurs autorisés par la salle"),
+                ("provider", "prestataire_technique_impose", "prestataires_techniques_autorises_ids", "Prestataires techniques autorisés par la salle"),
+            ):
+                if constraints[flag]:
+                    catalog = self.catalogs[category]
+                    names = {row["id"]: row["nom"] for row in catalog} if isinstance(catalog, list) else {}
+                    allowed = [names.get(identifier, f"référence {identifier} à vérifier") for identifier in constraints[ids_key]]
+                    lines.append(label + " : " + (", ".join(allowed) or "aucun — contrainte non résolue") + ".")
+        elif self.event_data["catering"] or self.event_data["providers"]:
+            lines.append("Compatibilité du traiteur et des prestataires avec la future salle à confirmer.")
         lines.append("Disponibilités non vérifiées ; aucune réservation confirmée. Aucun email envoyé.")
         return "\n".join(lines)

@@ -35,6 +35,10 @@ class ErreurLLM(Exception):
     """Erreur de configuration ou d'appel au LLM, avec un message clair en français."""
 
 
+class SortieInterrompue(ErreurLLM):
+    """Sortie tronquée : une réparation compacte est possible, sans exécuter ses outils."""
+
+
 class RunLimit(ErreurLLM):
     """Le budget global de la demande est épuisé."""
 
@@ -144,7 +148,9 @@ def chat(messages, tools=None, agent="?", temperature=0.3):
 
     duree = time.time() - debut
     _enregistrer_usage(reponse, agent, duree)
-    if reponse.choices[0].finish_reason in ("length", "content_filter"):
+    if reponse.choices[0].finish_reason == "length":
+        raise SortieInterrompue("Réponse du modèle interrompue : length")
+    if reponse.choices[0].finish_reason == "content_filter":
         raise ErreurLLM("Réponse du modèle interrompue : " + reponse.choices[0].finish_reason)
     refusal = getattr(reponse.choices[0].message, "refusal", None)
     if isinstance(refusal, str) and refusal.strip():
@@ -155,6 +161,8 @@ def chat(messages, tools=None, agent="?", temperature=0.3):
 def _enregistrer_usage(reponse, agent, duree):
     """Note les tokens consommés dans JOURNAL et dans traces.jsonl."""
     usage = reponse.usage
+    message = reponse.choices[0].message
+    token_details = getattr(usage, "completion_tokens_details", None)
     entree = {
         "horodatage": datetime.now().isoformat(timespec="seconds"),
         "demande": demande_en_cours,
@@ -164,6 +172,10 @@ def _enregistrer_usage(reponse, agent, duree):
         "finish_reason": getattr(reponse.choices[0], "finish_reason", None),
         "prompt_tokens": usage.prompt_tokens if usage else 0,
         "completion_tokens": usage.completion_tokens if usage else 0,
+        "reasoning_tokens": getattr(token_details, "reasoning_tokens", None),
+        # Réponse brute utile au diagnostic, sans messages entrants ni raisonnement privé.
+        "response": message_assistant(message),
+        "refusal": getattr(message, "refusal", None),
         "duree_s": round(duree, 2),
     }
     JOURNAL.append(entree)

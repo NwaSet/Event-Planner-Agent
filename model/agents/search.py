@@ -2,8 +2,12 @@
 
 from copy import deepcopy
 from datetime import datetime, timedelta
+from decimal import Decimal
+import math
+import re
 
 from . import tools
+from ..finance import fits_budget
 
 
 CATALOGS = {
@@ -11,6 +15,48 @@ CATALOGS = {
     "catering": ("caterers.json", "traiteurs", tools.SCHEMA_CATERERS, tools._caterer_match),
     "provider": ("providers.json", "prestataires", tools.SCHEMA_PROVIDERS, tools._provider_match),
 }
+
+
+def normalize_arguments(values, properties):
+    """Conversions non ambiguës à l'entrée des agents ; outils publics inchangés."""
+    if not isinstance(values, dict):
+        return values
+    normalized = deepcopy(values)
+    for key, value in normalized.items():
+        spec = properties.get(key, {})
+        kind = spec.get("type")
+        kind = kind[0] if isinstance(kind, list) else kind
+        if kind in ("integer", "number"):
+            if isinstance(value, str) and re.fullmatch(r"\d+(?:[.,]\d+)?", value.strip()):
+                number = Decimal(value.strip().replace(",", "."))
+                if kind == "number":
+                    value = float(number)
+                elif number == number.to_integral_value():
+                    value = int(number)
+            elif kind == "integer" and type(value) is float and math.isfinite(value) and value.is_integer():
+                value = int(value)
+        elif kind == "boolean" and isinstance(value, str):
+            value = {"true": True, "false": False, "oui": True, "non": False}.get(value.strip().casefold(), value)
+        elif kind == "array" and key == "ids" and isinstance(value, str) and value.strip():
+            value = [value.strip()]  # Ne jamais convertir les identifiants numériques ou perdre leurs zéros.
+        if isinstance(value, str) and "enum" in spec:
+            value = next((option for option in spec["enum"] if isinstance(option, str)
+                          and tools._normalize(option) == tools._normalize(value)), value)
+        normalized[key] = value
+    return normalized
+
+
+def event_type_error(event_type, request):
+    if not isinstance(event_type, str):
+        return None
+    category, wording = tools._normalize(event_type), tools._normalize(request)
+    if category in ("soiree musicale", "soiree electronique"):
+        return "Soirée musicale : précisez music_required et rental_period=soiree, sans inventer un type du catalogue."
+    musical_party = re.search(r"\bsoiree\b.*\b(musicale|electronique|dj|musique)\b", wording)
+    concert = re.search(r"\bconcert\b", wording) and not re.search(r"\b(?:pas|sans) (?:un |de )?concert\b", wording)
+    if category == "concert" and musical_party and not concert:
+        return "Une soirée musicale ou avec DJ n'est pas un concert demandé : retirez event_type=concert."
+    return None
 
 
 def load_catalogs():
@@ -105,7 +151,11 @@ def search_candidates(category, filters=None, *, catalogs=None, context=None, ac
     if isinstance(rows, dict):
         return {"status": "error", **rows, "candidates": []}
     try:
+        filters = normalize_arguments(filters, schema["function"]["parameters"]["properties"])
         cleaned, problem = tools._validate_filters(filters, schema)
+        if problem:
+            return {"status": "invalid_filters", "error": problem, "candidates": []}
+        problem = event_type_error(cleaned.get("event_type"), (context or {}).get("request", ""))
         if problem:
             return {"status": "invalid_filters", "error": problem, "candidates": []}
         if category == "catering" and "max_budget" in cleaned and "guests" not in cleaned:
@@ -119,18 +169,26 @@ def search_candidates(category, filters=None, *, catalogs=None, context=None, ac
                 continue
             if accept is not None and not accept(row):
                 continue
+            financial = (context or {}).get("financial", {})
+            if category == "venue" and not fits_budget(category, row, None, cleaned, financial):
+                continue
             candidate = row
             offers_key = {"catering": "formules", "provider": "kits"}.get(category)
             if offers_key:
                 candidate = dict(row)
                 candidate[offers_key] = [offer for offer in row[offers_key]
-                                        if matches({**row, offers_key: [offer]}, cleaned)]
+                                        if matches({**row, offers_key: [offer]}, cleaned)
+                                        and fits_budget(category, row, offer, cleaned, financial)]
+                if not candidate[offers_key]:
+                    continue
             candidates.append(project(category, candidate))
         # Sous-ensemble explicite : le modèle peut préciser ses critères pour explorer davantage.
         limit = min(cleaned.get("limit") or 5, 10)
         return {"status": "matched" if candidates else "no_match",
                 "total": len(candidates), "shown": min(limit, len(candidates)),
+                "filters": cleaned,
                 "candidates": candidates[:limit], "availability": "non vérifiée",
+                **({"truncated": len(candidates) > limit, "order": "catalogue, sans classement qualitatif"} if candidates else {}),
                 **({"error": "Aucune offre ne respecte toutes les contraintes."} if not candidates else {})}
     except (ValueError, TypeError, KeyError, AttributeError) as error:
         return {"status": "error", "error": f"Recherche impossible : {error}", "candidates": []}
