@@ -38,7 +38,7 @@ def normalize_arguments(values, properties):
         elif kind == "boolean" and isinstance(value, str):
             value = {"true": True, "false": False, "oui": True, "non": False}.get(value.strip().casefold(), value)
         elif kind == "array" and key == "ids" and isinstance(value, str) and value.strip():
-            value = [value.strip()]  # Ne jamais convertir les identifiants numériques ou perdre leurs zéros.
+            value = [value.strip()]
         if isinstance(value, str) and "enum" in spec:
             value = next((option for option in spec["enum"] if isinstance(option, str)
                           and tools._normalize(option) == tools._normalize(value)), value)

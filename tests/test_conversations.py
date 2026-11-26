@@ -229,16 +229,19 @@ def test_actual_supervisor_snapshot_keeps_selected_names_and_finances_after_cata
         if agent == "Supervisor":
             call = SimpleNamespace(id="choose", function=SimpleNamespace(name="decision_making_agent", arguments=json.dumps({
                 "demande": "Prestataire", "category": "provider", "tasks": ["provider"],
-                "requirements": {"provider_filters": {"ids": ["002"]}}})))
+                "requirements": {}})))
             return SimpleNamespace(content=None, tool_calls=[call])
         assert agent == "decision making agent"
+        if len(messages) == 2:
+            call = SimpleNamespace(id="search", function=SimpleNamespace(name="get_providers", arguments="{}"))
+            return SimpleNamespace(content=None, tool_calls=[call])
         return SimpleNamespace(content='{"id":"002","kit_id":6}', tool_calls=None)
 
     chat = Mock(side_effect=fake)
     monkeypatch.setattr(agent, "chat", chat)
     supervisor = create_orchestrator()
     conversation = controller.run_conversation("Prestataire son", directory=tmp_path, orchestrator_factory=lambda: supervisor)
-    assert conversation["status"] == "completed" and chat.call_count == 2
+    assert conversation["status"] == "completed" and chat.call_count == 3
     assert conversation["event_details"]["providers"][0]["nom"] == "B-Sound Events"
     assert conversation["event_details"]["costs"]["known"]["provider_ht"] == 3000
     assert conversation["event_data"]["providers"] == [{"id": "002", "kit_id": 6}]

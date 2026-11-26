@@ -5,7 +5,10 @@ from .agent import Agent
 from .agents import create_all_agents
 from .agents.search import CATALOGS
 from .event_state import EventRun, TASKS, REQUIREMENT_PROPERTIES, encode
-from .llm import tool_schema
+from .llm import tool_schema, lire_arguments
+
+
+SUPERVISOR_REQUIREMENTS = {key: value for key, value in REQUIREMENT_PROPERTIES.items() if not key.endswith("_filters")}
 
 
 PROMPT_SUPERVISOR = """
@@ -16,7 +19,7 @@ transmets toutes ses contraintes explicites pertinentes, notamment city, event_t
 guests, budget_total et les contraintes obligatoires dans requirements.
 Tu peux joindre requirements avec seulement les contraintes explicites déjà connues
 (city, guests, budget_total, date, weekday, planning, rental_period, preferences,
-music_end, music_required, document_kind ou venue_filters/catering_filters/provider_filters).
+music_end, music_required ou document_kind uniquement si un document est demandé).
 Ajoute les nouvelles contraintes au moment utile, sans recopier celles déjà enregistrées.
 preferences est une chaîne de texte décrivant les souhaits qualitatifs. Les contraintes
 obligatoires (type, capacité, budget, horaires, exclusions) vont dans leurs champs dédiés.
@@ -38,7 +41,11 @@ Une ville imposée (« uniquement à », « pas en dehors de ») exige location_
 location_scope="province_fallback" : Python cherche d'abord dans la ville, puis seulement
 dans la même province si aucun résultat. C'est un périmètre administratif explicite,
 pas une distance ni une garantie de voisinage ; les catalogues n'en donnent pas.
-Ne prépare pas les filtres de recherche : Python les prépare lors des délégations.
+Ne prépare aucun objet venue_filters/catering_filters/provider_filters : Python construit les filtres
+depuis les exigences validées. N'envoie pas de filtres d'une autre catégorie.
+Inconnu signifie omis, jamais 0, False, True ou une valeur d'exemple du schéma.
+accessible, seated et space_type ne sont obligatoires que si l'utilisateur les exige.
+« De préférence un samedi » est une préférence, pas une restriction weekday obligatoire.
 Par exemple planning_agent(demande="Propose une date", tasks=["planning","venue","catering","provider"]).
 Pour une soirée, rental_period=soiree est facultatif. Ne fabrique aucune valeur inconnue.
 Sans date imposée, omets date et planning ; laisse Planning choisir une date future.
@@ -58,7 +65,10 @@ Si seule la date est imposée, fournis date et laisse Planning proposer les hora
 Python conserve les exigences et les résultats : ne les recopie pas.
 Choisis l'ordre selon les besoins : généralement planning, budget si limité, salle,
 puis traiteur et prestataire. Une délégation Decision-Making concerne exactement
-venue, catering OU provider. Python injecte les contraintes et les candidats compatibles.
+venue, catering OU provider. category est OBLIGATOIRE à chaque appel decision_making_agent :
+venue = salle, catering = traiteur, provider = prestataire technique. N'infère pas une catégorie
+ambiguë : demande une précision. Exemple : decision_making_agent(category="venue", demande="Choisir une salle").
+Python injecte planning, budget, contraintes validées et candidats compatibles ; ne les recopie pas.
 La date n'est pas indispensable pour recommander une salle : disponibilité à confirmer.
 Si tu recherches sans requirements, utilise l'outil de recherche du spécialiste pour
 appliquer les critères de la demande originale avant de choisir.
@@ -113,6 +123,7 @@ class Supervisor(Agent):
         self._bind(None)
 
     def _bind(self, run):
+        self._active_run = run
         budget, writer, planning, decision = create_all_agents()
         definitions = []
         for agent, name, task in ((budget, "budgetary_agent", "budget"), (writer, "writer_agent", "documents"),
@@ -120,15 +131,31 @@ class Supervisor(Agent):
             properties = {
                 "demande": {"type": "string"},
                 "requirements": {"type": "object", "description": "Contraintes explicites nouvelles seulement. Ne contient jamais tasks, qui appartient au niveau supérieur.",
-                                 "properties": REQUIREMENT_PROPERTIES,
+                                 "properties": SUPERVISOR_REQUIREMENTS,
                                  "additionalProperties": False},
                 "tasks": {"type": "array", "items": {"type": "string", "enum": list(TASKS)},
                           "description": "Facultatif : tâches demandées, sans ordre imposé ; uniquement ici, jamais dans requirements."},
             }
             if task is None:
-                properties["category"] = {"type": "string", "enum": list(CATALOGS)}
+                properties["category"] = {"type": "string", "enum": list(CATALOGS),
+                    "description": "Obligatoire : venue = salle ; catering = traiteur ; provider = prestataire technique. Une seule catégorie, jamais implicite."}
+                fields = ("city", "province", "location_scope", "event_type", "guests", "rental_period",
+                          "preferences", "accessible", "seated", "space_type")
+                properties["requirements"]["properties"] = {key: REQUIREMENT_PROPERTIES[key] for key in fields}
+                properties["requirements"]["description"] = "Seulement les nouvelles contraintes métier explicites utiles à la catégorie ; omettre les informations inconnues. Python reprend planning et budget enregistrés. Aucun objet de filtres."
 
             def handler(agent, demande, category=None, requirements=None, tasks=None, task=task):
+                if task is None and (not isinstance(category, str) or category not in CATALOGS):
+                    return {"status": "error", "code": "invalid_arguments",
+                            "error": "category est obligatoire : venue (salle), catering (traiteur), provider (prestataire). Aucune catégorie déduite."}
+                if run.interactive:
+                    if requirements is not None and not isinstance(requirements, dict):
+                        return {"status": "error", "code": "invalid_arguments", "error": "requirements doit être un objet JSON, pas une chaîne."}
+                    if task == "documents" and not run.document_requested():
+                        return {"status": "not_requested", "reason": "Aucun document demandé ; Writer non exécuté."}
+                    requirements = run.supervisor_requirements(requirements, category=category if task is None else None)
+                    if isinstance(tasks, list) and not run.document_requested():
+                        tasks = [value for value in tasks if value != "documents"] or None
                 return run.delegate(agent, demande, task or category, requirements=requirements, tasks=tasks)
 
             definitions.append(agent.as_tool(name, f"Délègue {task or 'une sélection par catégorie'} ; contexte ajouté par Python.",
@@ -137,14 +164,66 @@ class Supervisor(Agent):
         if run is not None and run.interactive:
             definitions.append((run.clarify, tool_schema("clarify", "Demander une précision indispensable et terminer ce tour.",
                                                        {"question": {"type": "string"}}, requis=["question"])))
-            definitions.append((run.revise_event, tool_schema("revise_event", "Modifier uniquement les contraintes/actions explicitement demandées ; conserver les choix encore valides.", {
-                "requirements": {"type": "object", "properties": REQUIREMENT_PROPERTIES, "additionalProperties": False},
+            def revise(requirements=None, replace=None, remove=None, unset=None):
+                return run.revise_event(requirements=run.supervisor_requirements(requirements),
+                                        replace=replace, remove=remove, unset=unset)
+
+            definitions.append((revise, tool_schema("revise_event", "Modifier uniquement les contraintes/actions explicitement demandées ; conserver les choix encore valides.", {
+                "requirements": {"type": "object", "properties": SUPERVISOR_REQUIREMENTS, "additionalProperties": False},
                 "replace": {"type": "array", "items": {"type": "string", "enum": list(TASKS)}},
                 "remove": {"type": "array", "items": {"type": "string", "enum": ["venue", "catering", "provider", "documents"]}},
                 "unset": {"type": "array", "items": {"type": "string", "enum": list(REQUIREMENT_PROPERTIES)}},
             })))
         self.fonctions = {schema["function"]["name"]: function for function, schema in definitions}
         self.schemas = [schema for _, schema in definitions]
+
+    def prepare_tool_batch(self, appels):
+        """Un succès du premier outil ne doit pas masquer les délégations suivantes du lot."""
+        run = self._active_run
+        if run is None or run.event_data["pending_input"]:
+            return
+        planned = []
+        declared = False
+        for appel in appels:
+            arguments = lire_arguments(appel)
+            if arguments.get("code") == "invalid_arguments":
+                continue
+            name = appel.function.name
+            if name == "clarify" and isinstance(arguments.get("question"), str) and arguments["question"].strip():
+                break  # Aucun travail annoncé après une question qui rend la main à l'utilisateur.
+            task = {"planning_agent": "planning", "budgetary_agent": "budget", "writer_agent": "documents"}.get(name)
+            if name == "decision_making_agent":
+                category = arguments.get("category")
+                if not isinstance(category, str) or category not in CATALOGS:
+                    continue
+                task = category
+            if task is None or not isinstance(arguments.get("demande"), str) or not arguments["demande"].strip():
+                continue
+            if run.interactive and task == "documents" and not run.document_requested():
+                continue
+            requirements = arguments.get("requirements")
+            if requirements is not None and not isinstance(requirements, dict):
+                continue
+            tasks = arguments.get("tasks")
+            nested = (requirements or {}).get("tasks")
+            if nested is not None:
+                if not isinstance(nested, list) or not nested or any(value not in TASKS for value in nested):
+                    continue
+                if tasks is not None and (not isinstance(tasks, list) or any(value not in TASKS for value in tasks)
+                                          or set(tasks) != set(nested)):
+                    continue
+                tasks = nested
+            if tasks is not None and (not isinstance(tasks, list) or not tasks or any(value not in TASKS for value in tasks)):
+                continue
+            announced = tasks or []
+            if run.interactive and not run.document_requested():
+                announced = [value for value in announced if value != "documents"]
+            declared |= bool(announced)
+            planned.extend([task, *announced])
+        # Sans liste explicite, le Supervisor reste libre de poursuivre au tour ReAct suivant.
+        run.scope_declared |= declared
+        for task in planned:
+            run.event_data["tasks"].setdefault(task, {"status": "pending"})
 
     def run(self, request, *, event_data=None, messages=None, interactive=False):
         self.event_details = {}

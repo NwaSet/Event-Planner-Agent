@@ -100,6 +100,7 @@ class Agent:
             if message.content:
                 trace.think(self.name, message.content)
 
+            self.prepare_tool_batch(message.tool_calls)
             messages.append(message_assistant(message))
             progress = False
             for appel in message.tool_calls:
@@ -167,6 +168,9 @@ class Agent:
             self.last_error_code = ("interrupted_output" if isinstance(error, SortieInterrompue)
                                     else "llm_error" if isinstance(error, ErreurLLM) else "invalid_output")
             return snapshot
+
+    def prepare_tool_batch(self, appels):
+        """Point d'extension avant un lot d'outils ; les agents ordinaires n'annoncent aucune tâche."""
 
     def execute_tool(self, appel):
         """Exécute l'outil demandé par le modèle et renvoie le résultat sous forme de texte."""

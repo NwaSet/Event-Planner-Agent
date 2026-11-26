@@ -23,9 +23,12 @@ REQUIREMENT_PROPERTIES = {
     "date": {"type": "string", "description": "Date imposée YYYY-MM-DD."},
     "weekday": {"type": "string", "enum": list(tools.DAYS), "description": "Jour demandé, sans inventer une date."},
     "rental_period": {"type": "string", "enum": ["journee", "soiree"]},
+    "accessible": {"type": "boolean", "description": "Accès PMR explicitement exigé ; omettre si inconnu."},
+    "seated": {"type": "boolean", "description": "Places assises explicitement exigées ; omettre si inconnu."},
+    "space_type": {"type": "string", "enum": ["interieur", "exterieur", "les deux"], "description": "Type d'espace explicitement imposé, jamais une valeur par défaut."},
     "planning": {"type": "object", "properties": {"start": {"type": "string"}, "end": {"type": "string"}},
                  "required": ["start", "end"], "additionalProperties": False},
-    "music_required": {"type": "boolean", "description": "Musique jusqu'à la fin, true par défaut."},
+    "music_required": {"type": "boolean", "description": "Exigence musicale explicite ; omettre si inconnue."},
     "music_end": {"type": "string", "description": "Fin de musique imposée YYYY-MM-DDTHH:MM si distincte."},
     "preferences": {"type": "string"}, "assumptions": {"type": "string"},
     "document_kind": {"type": "string", "enum": ["email", "synthesis"]},
@@ -96,7 +99,8 @@ class EventRun:
                            "providers": [], "documents": [], "tasks": {}, "plan_approval": None, "weather": [],
                            "location_search": None, "pending_input": None, "revision": 0,
                            "document_archive": [], "decision_archive": [], "approval_archive": [],
-                           "selection_filters": {}, "rejected_venues": [], "venue_replacement_pending": False}
+                           "selection_filters": {}, "rejected_venues": [], "venue_replacement_pending": False,
+                           "budget_categories": None}
         if event_data:
             self.event_data.update(deepcopy(event_data))
         self.catalogs = load_catalogs()
@@ -315,9 +319,9 @@ class EventRun:
             if (type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 1
                     or not math.isclose(value * 20, round(value * 20), abs_tol=1e-8)):
                 raise ValueError("Proportions finies entre 0 et 1, multiples de 0.05 attendues.")
-            if self.scope_declared and category not in self.event_data["tasks"] and value != 0:
+            if (self.scope_declared or self.interactive) and category not in self.event_data["tasks"] and value != 0:
                 raise ValueError(f"La catégorie {category} n'est pas demandée.")
-        expected = 1 if not self.scope_declared or any(category in self.event_data["tasks"] for category in CATALOGS) else 0
+        expected = 1 if not (self.scope_declared or self.interactive) or any(category in self.event_data["tasks"] for category in CATALOGS) else 0
         if not math.isclose(sum(budget.values()), expected, abs_tol=1e-8):
             raise ValueError(f"La somme des proportions doit valoir {expected}.")
         if self.interactive:
@@ -347,7 +351,9 @@ class EventRun:
             result = {"requirements": {key: req[key] for key in fields if key in req}, "today": self.today,
                     "current_request": self.turn_request,
                     "request": self.event_data["request"],
-                    "categories": [key for key in CATALOGS if key in self.event_data["tasks"]] if self.scope_declared else None}
+                    "categories": [key for key in CATALOGS if key in self.event_data["tasks"]] if self.scope_declared or self.interactive else None}
+            if task == "budget" and self.interactive:
+                result["current_costs"] = self.costs()
             if task == "planning" and self.selected_row("venue"):
                 result["venue_constraints"] = self.selected_row("venue")["contraintes"]
             if task == "planning":
@@ -376,6 +382,7 @@ class EventRun:
             if field in req:
                 filters[field] = req[field]
         if task == "venue":
+            filters.update({key: req[key] for key in ("accessible", "seated", "space_type") if key in req})
             if req.get("rental_period"):
                 filters.setdefault("rental_period", req["rental_period"])
             for field in ("city", "province"):
@@ -519,6 +526,8 @@ class EventRun:
                 return reused
             return self.record(task, {"status": "error", "error": str(error), "code": "invalid_requirements"})
         self.event_data["tasks"].setdefault(task, {"status": "pending"})
+        if self.interactive and (task == "budget" or task in CATALOGS):
+            self.refresh_budget_scope()
         if self.interactive and task == "documents" and self.event_data["tasks"][task]["status"] == "skipped":
             self.event_data["tasks"][task] = {"status": "pending"}
         if (task == "documents" and self.event_data["requirements"].get("document_kind") == "email"
@@ -599,6 +608,11 @@ class EventRun:
 
             def search(**extra):
                 extra = normalize_arguments(extra, CATALOGS[task][2]["function"]["parameters"]["properties"])
+                if self.interactive:
+                    optional = {key: value for key, value in extra.items()
+                                if key in ("accessible", "seated", "space_type") and key not in context["filters"]}
+                    confirmed = self.supervisor_requirements(optional)
+                    extra = {key: value for key, value in extra.items() if key not in optional or key in confirmed}
                 for key, value in context["filters"].items():
                     if key != "limit" and key in extra and extra[key] != value:
                         return {"status": "invalid_filters", "error": f"Contrainte fixée : {key}."}
@@ -769,6 +783,8 @@ class EventRun:
         if outcome["status"] == "success":
             field = {"provider": "providers", "documents": "documents"}.get(task, task)
             self.event_data[field] = [outcome["result"]] if field in ("providers", "documents") else outcome["result"]
+            if task == "budget" and self.interactive:
+                self.event_data["budget_categories"] = [category for category in CATALOGS if category in self.event_data["tasks"]]
             if task in CATALOGS:
                 outcome["details"] = self.selection_details(task)
             if self.interactive and task in ("planning", "budget", "venue"):
@@ -779,6 +795,21 @@ class EventRun:
         elif task == "documents" and outcome["status"] == "refused" and "result" in outcome:
             self.event_data["documents"] = [outcome["result"]]
         return outcome
+
+    def refresh_budget_scope(self):
+        """Une prestation ajoutée exige une allocation qui la couvre, pas un faux plafond nul."""
+        budget = self.event_data["budget"]
+        if not budget or self.event_data["requirements"].get("budget_total") is None:
+            return
+        covered = self.event_data["budget_categories"]
+        if covered is None:
+            # Anciennes sauvegardes : seules les catégories financées attestent leur prise en compte.
+            covered = [category for category, fraction in budget.items() if fraction > 0]
+        requested = {category for category in CATALOGS if category in self.event_data["tasks"]}
+        if requested - set(covered):
+            self.material_change("Prestation ajoutée à la répartition du budget")
+            self.invalidate("budget", "Nouvelle prestation : Budgetary doit réviser la répartition existante.")
+            self.event_data["budget_categories"] = None
 
     def material_change(self, reason):
         """Les accords et textes restent attachés à leur ancienne version, jamais réutilisés."""
@@ -900,8 +931,12 @@ class EventRun:
             finally:
                 self.event_data = original
                 self.scope_declared = scope
-            if candidate == before["requirements"] and not replace and not remove:
-                return {"status": "unchanged"}
+            if candidate == before["requirements"]:
+                # Remplacer un résultat absent ne constitue pas un nouveau critère de recherche.
+                replace = [task for task in replace if before["tasks"].get(task, {}).get("status")
+                           not in ("error", "no_match", "invalid_filters", "blocked", "limit")]
+                if not replace and not remove:
+                    return {"status": "unchanged"}
             self.material_change("Modification demandée par l'utilisateur")
             self.turn_actions = True
             self.event_data["requirements"] = candidate
@@ -962,6 +997,101 @@ class EventRun:
             raise ValueError("Plafonds du prestataire contradictoires.")
         filters["max_budget"] = ceiling
         return scoped
+
+    def document_requested(self):
+        current = tools._normalize(self.turn_request)
+        document = r"(?:e-?)?mail|courriel|document|rapport|synthese"
+        if re.search(r"\b(?:sans|pas de|pas d'|aucun)\s*(?:" + document + r")\b", current):
+            return False
+        if self.event_data["requirements"].get("document_kind"):
+            return True
+        text = current + " " + tools._normalize(self.event_data["request"])
+        return bool(re.search(r"\b(?:redige\w*|ecri\w*|prepar\w*|faire|fais)\b.{0,65}\b(?:" + document + r")\b", text))
+
+    def supervisor_requirements(self, requirements, *, category=None):
+        """Ne pas promouvoir les objets techniques ou les valeurs d'exemple du modèle en exigences."""
+        if requirements is None:
+            return None
+        if not isinstance(requirements, dict):
+            raise ValueError("requirements doit être un objet JSON.")
+        known = self.event_data["requirements"]
+        text = tools._normalize(self.turn_request + " " + self.event_data["request"])
+        requirements = deepcopy(requirements)
+        legacy_venue = requirements.get("venue_filters")
+        if category in (None, "venue") and isinstance(legacy_venue, dict):
+            for key in ("accessible", "seated", "space_type"):
+                if key in legacy_venue:
+                    requirements.setdefault(key, legacy_venue[key])
+        def is_preference(pattern):
+            clauses = [clause for clause in re.split(r"[.,;!?\n]", text) if re.search(pattern, clause)]
+            return bool(clauses) and all(re.search(r"\b(?:preference|idealement|si possible)\b", clause) for clause in clauses)
+        cleaned = {}
+        for key, value in requirements.items():
+            if key.endswith("_filters"):
+                continue  # Contrat historique accepté sans importer ses objets techniques.
+            if key not in REQUIREMENT_PROPERTIES:
+                raise ValueError("Champ d'exigence inconnu : " + key)
+            if key in known and value == known[key]:
+                continue  # Python reprend l'état, y compris les choix confirmés antérieurement.
+            if key == "budget_total" and value is None and re.search(r"\b(?:illimite|sans (?:limite|plafond))\b", text):
+                cleaned[key] = None
+                continue
+            if value is None or value == "":
+                continue  # Inconnu ; une suppression explicite utilise unset.
+            if key in ("guests", "budget_total"):
+                numbers = {float(re.sub(r"\s", "", token).replace(",", "."))
+                           for token in re.findall(r"\b\d+(?:[ \u00a0\u202f]\d{3})*(?:[.,]\d+)?\b", text)}
+                if type(value) in (int, float) and value not in numbers:
+                    continue
+            if key == "planning" and value == self.event_data["planning"]:
+                continue  # Une date proposée ne devient pas un horaire imposé par répétition.
+            if key == "rental_period" and not re.search(r"\b(?:soiree?|journee)\b", text):
+                continue
+            if key == "document_kind" and not self.document_requested():
+                continue
+            if category and key in ("planning", "date", "weekday", "document_kind", "music_required", "music_end"):
+                continue
+            if key in ("provider_vat_rate", "provider_distance_km", "catering_distance_km", "provider_vehicles"):
+                if category:
+                    continue
+                number = r"(\d+(?:[.,]\d+)?)"
+                if key == "provider_vat_rate":
+                    values = [float(v.replace(",", ".")) / 100 for v in re.findall(r"tva\D{0,20}" + number + r"\s*%", text)]
+                elif key == "provider_vehicles":
+                    values = [float(v) for v in re.findall(r"\b(\d+)\s+vehicules?\b", text)]
+                else:
+                    who = "prestataire" if key.startswith("provider") else "traiteur"
+                    values = [float(v.replace(",", ".")) for v in re.findall(who + r"[^.;!?]{0,60}?\b" + number + r"\s*km\b", text)]
+                if value not in values:
+                    continue
+            if key in ("accessible", "seated", "space_type", "music_required"):
+                if category in ("catering", "provider") and key != "music_required":
+                    continue
+                patterns = {"accessible": r"\b(?:pmr|mobilite reduite|fauteuil roulant)\b",
+                            "seated": r"\b(?:places assises|personnes assises|tout le monde assis)\b",
+                            "space_type": r"\b(?:interieur|exterieur)\b",
+                            "music_required": r"\b(?:musique|dj)\b"}
+                if not re.search(patterns[key], text) or is_preference(patterns[key]):
+                    continue
+                if key == "music_required" and value is False and not re.search(r"\b(?:sans|pas de) musique\b", text):
+                    continue
+                if key in ("accessible", "seated") and value is not True:
+                    continue  # Une exigence positive n'autorise pas le modèle à injecter False.
+                if key == "space_type":
+                    inside, outside = "interieur" in text, "exterieur" in text
+                    expected = ("les deux" if re.search(r"interieur\s+et\s+exterieur|exterieur\s+et\s+interieur", text)
+                                else "interieur" if inside and not outside else "exterieur" if outside and not inside else None)
+                    if value != expected:
+                        continue
+            if key == "weekday" and is_preference(r"\b(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b"):
+                cleaned["preferences"] = self.turn_request
+                continue
+            if key == "location_scope" and value == "city" and known.get(key, "city") == "city":
+                continue
+            if key == "preferences" and value in ("", None):
+                continue
+            cleaned[key] = value
+        return cleaned
 
     def failed_contexts(self):
         """Photographier les entrées utiles des seuls échecs susceptibles d'être réouverts."""

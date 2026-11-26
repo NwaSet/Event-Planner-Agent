@@ -1,5 +1,30 @@
 # To Do — Event-Planner-Agent
 
+## Decision-Making et contraintes inventées — 26 novembre 2026
+
+Trace réelle `4d4b9578` analysée et appels utiles copiés dans `tests/fixtures/decision_4d4b9578.json` (arguments d'outils uniquement, sans raisonnement ni journal technique). Le dépôt était propre au début de cette intervention. **Neuf cas de régression reproduits en échec avant correction.**
+
+- [x] `category` était déjà dans les champs obligatoires du schéma. Ajouter une description explicite de `venue`, `catering`, `provider` et un contrôle avant la logique métier : catégorie absente, invalide ou ambiguë → `invalid_arguments`, aucun spécialiste exécuté, aucune catégorie déduite. `requirements` sous forme de chaîne est également rejeté.
+- [x] Réduire les arguments exposés pour Decision-Making aux nouvelles contraintes métier pertinentes. Retirer les objets complets `venue_filters`, `catering_filters`, `provider_filters` des schémas du Supervisor. Planning, budget et exigences validées sont repris directement dans l'état Python. Les anciennes interfaces Python internes restent compatibles.
+- [x] En mode conversationnel, ne pas importer les objets de filtres techniques renvoyés malgré le contrat. Les exigences PMR, places assises et type d'espace utilisent des champs métier plats, puis Python construit les filtres. Un ancien objet contenant une demande PMR/places assises explicite est traduit vers ces champs ; les valeurs sans appui dans le texte utilisateur sont écartées. Les contraintes déjà enregistrées restent disponibles sans devoir être répétées.
+- [x] Ne pas accepter de TVA, distances ou véhicules arbitraires ; conserver les valeurs explicites, y compris un zéro réellement fourni. Ne pas fabriquer un effectif ou un budget à partir d'une valeur d'exemple. Les données inconnues restent absentes. Les filtres optionnels inventés par la recherche du spécialiste sont contrôlés également.
+- [x] Séparer les préférences des obligations : « un samedi de préférence » alimente `preferences`, pas une restriction `weekday`. L'accessibilité obligatoire reste applicable même si une autre information est une préférence. Les valeurs inconnues `null` ne suppriment pas une contrainte connue ; un passage explicite au budget illimité reste possible.
+- [x] Écarter `document_kind="email"` et une tâche `documents` sans demande de document ; refuser l'appel Writer non demandé avant exécution. Maintenir l'accord sur le plan puis la validation du brouillon pour un email explicitement demandé.
+- [x] Conserver le diagnostic `no_match` et le registre des tentatives lors d'une révision sans critère utile : `replace=["venue"]` ne relance pas une recherche en échec inchangée. Une révision pertinente réouvre la tâche ; les choix Budgetary/Planning acquis restent conservés. Les limites existantes restent actives.
+- [x] Candidats compatibles → sélection qualitative par le véritable circuit Agent/ReAct/`as_tool()`, simulé dans les tests. Aucun candidat compatible → `no_match` sans appel LLM Decision-Making, sans candidat fabriqué ni assouplissement des restrictions.
+
+**Scénario vérifié :** « Organise un événement sur Namur. », puis « Étudiant, pour 100 personnes, maximum 10 000 €, un samedi de préférence. ». Clarification et reprise du même JSON, Budgetary et Planning réussis, appel sans catégorie rejeté, arguments pollués de la trace neutralisés, aucun email ajouté. À Namur strict, les salles du catalogue interdisent les soirées étudiantes : le résultat partiel est légitime même après suppression des filtres inventés. Un élargissement explicite à la province réautorise la recherche et un choix parmi les candidats compatibles. Un scénario anniversaire compatible confirme séparément l'appel qualitatif à Decision-Making.
+
+**Vérification finale : 25 nouveaux cas, 284 tests ciblés puis 480 tests complets réussis**, réseau bloqué, aucun LLM réel ou payant. Le test historique du snapshot de prestataire a été adapté : recherche autonome du spécialiste avant le choix de B-Sound Events, kit 6, 3 000 EUR HT ; noms et montants restent consultables sans catalogue à la réouverture.
+
+Commandes : `.\.venv\Scripts\python.exe -m pytest tests/test_decision_contract.py tests/test_dialogue.py tests/test_constraint_revisions.py tests/test_orchestration.py tests/test_conversations.py -q -p no:cacheprovider`, puis `.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider`. `git diff --check` sans erreur. Cinq agents, ReAct, `as_tool()`, DAO, interface et calculs financiers conservés ; catalogues, conversations sauvegardées et logs inchangés.
+
+Restent ouverts :
+
+- [ ] Refaire le parcours avec un véritable LLM : qualité des choix, extraction des formulations libres et respect du contrat par chaque fournisseur. Le schéma ne garantit pas qu'un modèle renseignera toujours `category` ; son omission est désormais contrôlée sans exécution métier.
+- [ ] Formulations ambiguës, négations complexes et détails non reconnus : les contrôles ciblés ne remplacent pas les clarifications du Supervisor. Ils ne certifient pas une compréhension exhaustive du langage naturel.
+- [ ] Les anciennes sauvegardes ne sont pas réécrites automatiquement : une contrainte polluée déjà enregistrée doit être explicitement corrigée. Aucun historique personnel n'a été modifié.
+
 ## Révisions des contraintes et reprise des spécialistes — 25 novembre 2026
 
 Intervention ciblée à partir des traces `899ca971`, `4e72bf9f`, `559f5934` et de la conversation sauvegardée correspondante. Les logs conservent les arguments des outils ; la sauvegarde confirme le conflit `location_scope`, la salle en `no_match` et le budget global remplacé par le plafond demandé pour le prestataire.

@@ -1,0 +1,223 @@
+{
+  "trace": "4d4b9578",
+  "calls": [
+    {
+      "name": "decision_making_agent",
+      "arguments": {
+        "demande": "Sélectionner un lieu (salle) à Namur pour une soirée étudiante de 100 personnes le samedi 28 novembre 2026.",
+        "requirements": "{\"city\": \"Namur\", \"event_type\": \"soiree_etudiante\", \"guests\": 100, \"budget_total\": 10000, \"weekday\": \"saturday\", \"rental_period\": \"soiree\", \"planning\": {\"start\": \"2026-11-28T20:00\", \"end\": \"2026-11-29T02:00\"}, \"music_required\": false, \"preferences\": \"\", \"assumptions\": \"\", \"document_kind\": \"email\", \"catering_distance_km\": 0, \"provider_distance_km\": 0, \"provider_vehicles\": 1, \"provider_vat_rate\": 0.2, \"venue_filters\": {\"city\": \"Namur\", \"province\": null, \"event_type\": \"soiree_etudiante\", \"guests\": 100, \"max_budget\": 10000, \"rental_period\": \"soiree\", \"venue_type\": null, \"space_type\": \"les deux\", \"seated\": true, \"accessible\": true, \"caterer_id\": null, \"provider_id\": null, \"ids\": null, \"limit\": 5}, \"catering_filters\": {...}, \"provider_filters\": {...}}"
+      }
+    },
+    {
+      "name": "decision_making_agent",
+      "arguments": {
+        "demande": "Sélectionner un lieu (salle) à Namur pour une soirée étudiante de 100 personnes le samedi 28 novembre 2026.",
+        "requirements": {
+          "city": "Namur",
+          "event_type": "soiree_etudiante",
+          "guests": 100,
+          "budget_total": 10000,
+          "weekday": "saturday",
+          "rental_period": "soiree",
+          "planning": {
+            "start": "2026-11-28T20:00",
+            "end": "2026-11-29T02:00"
+          },
+          "music_required": false,
+          "preferences": "",
+          "assumptions": "",
+          "document_kind": "email",
+          "catering_distance_km": 0,
+          "provider_distance_km": 0,
+          "provider_vehicles": 1,
+          "provider_vat_rate": 0.2,
+          "venue_filters": {
+            "city": "Namur",
+            "province": null,
+            "event_type": "soiree_etudiante",
+            "guests": 100,
+            "max_budget": 10000,
+            "rental_period": "soiree",
+            "venue_type": null,
+            "space_type": "les deux",
+            "seated": true,
+            "accessible": true,
+            "caterer_id": null,
+            "provider_id": null,
+            "ids": null,
+            "limit": 5
+          },
+          "catering_filters": {
+            "city": "Namur",
+            "province": null,
+            "event_type": "soiree_etudiante",
+            "guests": 100,
+            "max_budget": 10000,
+            "service_type": null,
+            "full_meal": null,
+            "cuisine": null,
+            "dietary_options": null,
+            "ids": null,
+            "limit": 5
+          },
+          "provider_filters": {
+            "city": "Namur",
+            "province": null,
+            "category": null,
+            "max_budget": 10000,
+            "sound_level": null,
+            "light_level": null,
+            "video_level": null,
+            "setup_size": null,
+            "ids": null,
+            "limit": 5
+          }
+        },
+        "category": "venue"
+      }
+    },
+    {
+      "name": "revise_event",
+      "arguments": {
+        "requirements": {
+          "city": "Namur",
+          "province": null,
+          "location_scope": "city",
+          "event_type": "soiree_etudiante",
+          "guests": 100,
+          "budget_total": 10000,
+          "date": null,
+          "weekday": "saturday",
+          "rental_period": "soiree",
+          "planning": {
+            "start": "2026-11-28T20:00",
+            "end": "2026-11-29T02:00"
+          },
+          "music_required": false,
+          "music_end": null,
+          "preferences": "",
+          "assumptions": "",
+          "document_kind": "email",
+          "catering_distance_km": 0,
+          "provider_distance_km": 0,
+          "provider_vehicles": 1,
+          "provider_vat_rate": 0.2,
+          "venue_filters": {
+            "city": "Namur",
+            "province": null,
+            "event_type": "soiree_etudiante",
+            "guests": 100,
+            "max_budget": 6000,
+            "rental_period": "soiree",
+            "venue_type": null,
+            "space_type": "les deux",
+            "seated": true,
+            "accessible": true,
+            "caterer_id": null,
+            "provider_id": null,
+            "ids": null,
+            "limit": 5
+          },
+          "catering_filters": {
+            "city": "Namur",
+            "province": null,
+            "event_type": "soiree_etudiante",
+            "guests": 100,
+            "max_budget": 10000,
+            "service_type": null,
+            "full_meal": null,
+            "cuisine": null,
+            "dietary_options": null,
+            "ids": null,
+            "limit": 5
+          },
+          "provider_filters": {
+            "city": "Namur",
+            "province": null,
+            "category": null,
+            "max_budget": 10000,
+            "sound_level": null,
+            "light_level": null,
+            "video_level": null,
+            "setup_size": null,
+            "ids": null,
+            "limit": 5
+          }
+        },
+        "replace": [
+          "venue"
+        ],
+        "remove": [],
+        "unset": []
+      }
+    },
+    {
+      "name": "decision_making_agent",
+      "arguments": {
+        "demande": "Sélectionner un lieu (salle) à Namur pour une soirée étudiante de 100 personnes le samedi 28 novembre 2026.",
+        "requirements": {
+          "city": "Namur",
+          "event_type": "soiree_etudiante",
+          "guests": 100,
+          "budget_total": 10000,
+          "weekday": "saturday",
+          "rental_period": "soiree",
+          "planning": {
+            "start": "2026-11-28T20:00",
+            "end": "2026-11-29T02:00"
+          },
+          "music_required": false,
+          "preferences": "",
+          "assumptions": "",
+          "document_kind": "email",
+          "catering_distance_km": 0,
+          "provider_distance_km": 0,
+          "provider_vehicles": 1,
+          "provider_vat_rate": 0.2,
+          "venue_filters": {
+            "city": "Namur",
+            "province": null,
+            "event_type": "soiree_etudiante",
+            "guests": 100,
+            "max_budget": 4000,
+            "rental_period": "soiree",
+            "venue_type": null,
+            "space_type": "les deux",
+            "seated": true,
+            "accessible": true,
+            "caterer_id": null,
+            "provider_id": null,
+            "ids": null,
+            "limit": 5
+          },
+          "catering_filters": {
+            "city": "Namur",
+            "province": null,
+            "event_type": "soiree_etudiante",
+            "guests": 100,
+            "max_budget": 10000,
+            "service_type": null,
+            "full_meal": null,
+            "cuisine": null,
+            "dietary_options": null,
+            "ids": null,
+            "limit": 5
+          },
+          "provider_filters": {
+            "city": "Namur",
+            "province": null,
+            "category": null,
+            "max_budget": 10000,
+            "sound_level": null,
+            "light_level": null,
+            "video_level": null,
+            "setup_size": null,
+            "ids": null,
+            "limit": 5
+          }
+        },
+        "category": "venue"
+      }
+    }
+  ]
+}
