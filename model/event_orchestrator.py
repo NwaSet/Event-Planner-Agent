@@ -17,7 +17,9 @@ Enregistre les seuls faits explicitement connus avec revise_event(requirements=.
 puis délègue une instruction courte : Python injecte le contexte ciblé, ne recopie pas les contraintes.
 Annonce les tâches demandées pour reconnaître la fin. Choisis la salle avant les traiteurs et prestataires demandés.
 Planning choisit dates et horaires futurs si non imposés ; une date seule ne fixe pas les horaires.
+today est la date courante du tour. Une date sans année désigne sa prochaine occurrence ; ne reprends jamais une année ancienne par défaut.
 Budgetary répartit un budget global connu avant les achats, puis réévalue l'allocation si une prestation est ajoutée.
+Sans budget maximum connu, aucune répartition Budgetary n'est nécessaire.
 Decision-Making exige category : venue (salle), catering (traiteur), provider (technique).
 Exemple : decision_making_agent(category="venue", instruction="Choisir une salle adaptée").
 Ne refais pas un succès compatible ni une recherche no_match identique. Après un échec, poursuis les tâches indépendantes.
@@ -27,15 +29,24 @@ remove=["catering"] retire la prestation, unset retire une contrainte abandonné
 N'invente aucun effectif, plafond, taux TVA, distance, véhicule, accessibilité ou type d'espace.
 budget_total=null retire le plafond global ; un plafond de prestataire appartient à provider_constraints.max_budget.
 Une soirée générique/musicale/DJ n'est ni une soirée étudiante ni un concert sans demande explicite.
+Équivalence autorisée du catalogue : afterwork = reception_entreprise. N'invente aucune autre équivalence.
+Un afterwork n'impose pas service_type=cocktail. « Un bon repas » est une préférence ; full_meal exige une demande de repas complet.
 Une préférence de samedi reste preferences, sans weekday obligatoire.
 Par défaut, cherche la salle dans la commune compatible la plus proche (location_scope=nearest).
 location_scope=city uniquement si la commune est strictement imposée ; province_fallback si la province est imposée.
 Après sélection, les recherches de traiteurs, prestataires et météo utilisent la commune réelle de la salle.
 La proximité est à vol d'oiseau ; ne garantis ni temps de trajet ni disponibilité.
 Les *_constraints contiennent uniquement des exigences métier explicites ; aucun filtre technique ou valeur inventée.
+revise_event reçoit seulement les valeurs réellement nouvelles : omets les champs null, les contraintes vides et les doublons de l'état.
+Après une révision, exécute les tâches pending utiles ; ne répète pas la révision pour tenter une sélection.
+Si la salle échoue définitivement, poursuis les recherches de services possibles depuis la ville demandée, avec compatibilité provisoire.
+Une demande d'email reste en attente jusqu'aux sélections nécessaires ; appelle Writer après les tâches utiles pour obtenir la validation du plan.
 Les montants sont calculés par Python ; ne mélange pas HT, TTC et caution. N'invente aucune réservation.
 Writer seulement pour un document explicitement demandé, après les autres tâches utiles.
-Pour un email, document_kind=email et tasks inclut documents : Python soumet d'abord le plan global à validation.
+Pour un email explicite, appelle directement writer_agent(instruction="Rédiger une demande de devis au traiteur sélectionné.").
+Python conserve la demande de document, injecte les données existantes et soumet le plan à validation si nécessaire.
+Ne recopie pas document_kind dans requirements ni les résultats des spécialistes. Ne présente pas une sélection comme une réservation.
+Si Writer attend une clarification ou une validation, rends la main ; ne répète pas cet appel.
 Un refus interdit la génération ; un accord du plan ne remplace pas la validation individuelle du brouillon.
 Aucun envoi automatique. Termine par une réponse française concise ; les résultats partiels et conflits restent visibles.
 """
@@ -45,7 +56,7 @@ current_request est le nouveau message. L'état courant prime sur l'historique c
 Réponds directement aux questions simples avec les décisions et montants fournis, sans redélégation.
 clarify(question) demande une précision indispensable ; answered_question identifie la question en cours.
 Python sauvegarde les validations en attente ; ne transforme jamais une clarification en accord.
-Une modification matérielle invalide les anciens accords. Pour un nouveau document utilise replace=["documents"].
+Une modification matérielle invalide les anciens accords. Une nouvelle demande de document ouvre une rédaction indépendante et conserve les documents précédents.
 Ne répète pas l'organisation entière à chaque tour : ajoute ou modifie uniquement les contraintes concernées.
 """
 
@@ -94,13 +105,22 @@ class Supervisor(Agent):
             if run.interactive:
                 definitions.append((run.clarify, tool_schema("clarify", "Demander une précision indispensable et terminer ce tour.",
                                                            {"question": {"type": "string"}}, requis=["question"])))
-            def revise(requirements=None, replace=None, remove=None, unset=None, tasks=None):
+            def revise(requirements=None, replace=None, remove=None, unset=None, tasks=None, document_kind=None):
+                # Compatibilité déterministe avec l'appel mal formé de la trace d4d7b578.
+                if document_kind is not None:
+                    if document_kind not in ("email", "synthesis"):
+                        raise ValueError("document_kind : email ou synthesis attendu.")
+                    requirements = {**(requirements or {}), "document_kind": document_kind}
+                if run.event_data["tasks"].get("documents", {}).get("document") and isinstance(replace, list):
+                    replace = [task for task in replace if task != "documents"]
                 if tasks is not None and (not isinstance(tasks, list) or not tasks or any(task not in TASKS for task in tasks)):
                     raise ValueError("tasks : liste non vide de tâches connues attendue.")
-                outcome = run.revise_event(requirements=run.supervisor_requirements(requirements),
+                effective = run.supervisor_requirements(requirements)
+                outcome = run.revise_event(requirements=effective,
                                            replace=replace, remove=remove, unset=unset)
                 run.remember(tasks=tasks)
-                return {**outcome, "tasks": run.event_data["tasks"]}
+                return {**outcome, "tasks": run.event_data["tasks"],
+                        "requirements": {key: run.event_data["requirements"].get(key) for key in effective or {}}}
 
             definitions.append((revise, tool_schema("revise_event", "Modifier uniquement les contraintes/actions explicitement demandées ; conserver les choix encore valides.", {
                 "requirements": {"type": "object", "properties": SUPERVISOR_REQUIREMENTS, "additionalProperties": False},
@@ -160,10 +180,11 @@ class Supervisor(Agent):
         run.scope_declared |= declared
         for task in planned:
             run.event_data["tasks"].setdefault(task, {"status": "pending"})
+        run.reconcile_budget_task()
 
     def run(self, request, *, event_data=None, messages=None, interactive=False):
         self.event_details = {}
-        run = EventRun(request, self.max_llm_calls, self.max_delegations, event_data=event_data, interactive=interactive)
+        run = EventRun(request, self.max_llm_calls, self.max_delegations, event_data=event_data, interactive=interactive, messages=messages)
         self._bind(run)
         self.instructions = PROMPT_SUPERVISOR + (CONVERSATION_INSTRUCTIONS if interactive else "")
         # Diagnostic du dernier run seulement ; remplacé intégralement à chaque demande.

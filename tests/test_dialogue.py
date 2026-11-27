@@ -186,7 +186,8 @@ def test_email_after_venue_uses_two_persisted_validations_and_keeps_exact_text(t
     conversation = continue_conversation(load_conversation(conversation["conversation_id"], tmp_path),
                                          "oui" if approved else "non", directory=tmp_path)
     assert conversation["event_data"]["results"]["documents"] == [{"content": draft, "approved": approved,
-                                                         "revision": conversation["event_data"]["workflow"]["revision"]}]
+        "revision": conversation["event_data"]["workflow"]["revision"], "kind": "email", "recipient": "venue",
+        "purpose": "quote", "request": "Rédige un email à la salle", "status": "approved" if approved else "refused"}]
     assert conversation["event_data"]["workflow"]["pending_input"] is None
     assert conversation["status"] == ("completed" if approved else "refused")
     agent_module.chat.assert_not_called()

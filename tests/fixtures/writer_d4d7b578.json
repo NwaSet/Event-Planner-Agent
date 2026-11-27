@@ -1,0 +1,75 @@
+{
+  "trace": "d4d7b578",
+  "calls": [
+    {
+      "name": "revise_event",
+      "arguments": {
+        "document_kind": "email",
+        "tasks": [
+          "documents"
+        ]
+      }
+    },
+    {
+      "name": "revise_event",
+      "arguments": {
+        "requirements": {
+          "document_kind": "email"
+        },
+        "tasks": [
+          "documents"
+        ]
+      }
+    },
+    {
+      "name": "revise_event",
+      "arguments": {
+        "requirements": {
+          "city": "Namur",
+          "location_scope": "city",
+          "planning": {
+            "start": "2026-12-11T19:00",
+            "end": "2026-12-11T23:00"
+          },
+          "venue": {
+            "id": "salle_076",
+            "name": "Grange des Ailes Blanches"
+          },
+          "catering": {
+            "id": "traiteur_098",
+            "name": "La Brigade des Saisons Verveine"
+          },
+          "provider": {
+            "id": "005",
+            "kit_id": 2,
+            "name": "Total Organisation"
+          }
+        },
+        "tasks": [
+          "planning",
+          "venue",
+          "catering",
+          "provider"
+        ]
+      }
+    },
+    {
+      "name": "writer_agent",
+      "arguments": {
+        "instruction": "Rédiger l'email de confirmation de réservation pour l'événement du 11 décembre 2026 (19h-23h) à la Grange des Ailes Blanches (Namur), avec le traiteur La Brigade des Saisons Verveine et le prestataire technique Total Organisation."
+      }
+    },
+    {
+      "name": "writer_agent",
+      "arguments": {
+        "instruction": "Rédiger l'email de confirmation de réservation pour l'événement du 11 décembre 2026 (19h-23h) à la Grange des Ailes Blanches (Namur), avec le traiteur La Brigade des Saisons Verveine (ID traiteur_098) et le prestataire technique Total Organisation (ID 005, kit 2). Inclure : date, heure, lieu, nom du traiteur, nom du prestataire, montant de caution 650 EUR, plafond HT venue 2250 EUR, TTC 2250 EUR ? (not sure), budget total non confirmé, TVA à confirmer, kilométrage, boissons, personnel supplémentaire. Indiquer que la caution est hors dépense."
+      }
+    },
+    {
+      "name": "writer_agent",
+      "arguments": {
+        "instruction": "Générer le document email demandé pour la confirmation de réservation. Rédiger l'email en français."
+      }
+    }
+  ]
+}

@@ -1,0 +1,400 @@
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": "organise une soirée sur namur et génère moi le mails pour le traiter. tu n'as pas de limite de budget"
+    },
+    {
+      "role": "user",
+      "content": "afterwork, 100 invité maximum prévu, le premier samedi de decembre, on prefere avoir un bon repas"
+    },
+    {
+      "role": "user",
+      "content": "2026, pas d'exigence spécifique. "
+    },
+    {
+      "role": "user",
+      "content": "organise la soirée"
+    }
+  ],
+  "revisions": [
+    {
+      "trace": "48267a87",
+      "arguments": {
+        "requirements": {
+          "city": "Namur",
+          "location_scope": "nearest",
+          "event_type": "afterwork",
+          "guests": 100,
+          "date": "2025-12-06",
+          "weekday": "saturday",
+          "rental_period": "soiree",
+          "document_kind": "email",
+          "preferences": "un bon repas complet",
+          "budget_total": null,
+          "max_budget": null
+        },
+        "tasks": [
+          "planning",
+          "budget",
+          "venue",
+          "catering",
+          "provider",
+          "documents"
+        ]
+      }
+    },
+    {
+      "trace": "48267a87",
+      "arguments": {
+        "requirements": {
+          "city": "Namur",
+          "location_scope": "nearest",
+          "event_type": "afterwork",
+          "guests": 100,
+          "date": "2025-12-06",
+          "weekday": "saturday",
+          "rental_period": "soiree",
+          "preferences": "un bon repas complet",
+          "budget_total": null,
+          "document_kind": "email"
+        },
+        "tasks": [
+          "planning",
+          "budget",
+          "venue"
+        ]
+      }
+    },
+    {
+      "trace": "48267a87",
+      "arguments": {
+        "requirements": {
+          "city": "Namur",
+          "location_scope": "nearest",
+          "event_type": "afterwork",
+          "guests": 100,
+          "rental_period": "soiree",
+          "preferences": "premier samedi de decembre, bon repas complet",
+          "document_kind": "email",
+          "catering_constraints": {
+            "event_type": "afterwork",
+            "guests": 100,
+            "service_type": "cocktail",
+            "full_meal": true
+          }
+        },
+        "tasks": [
+          "planning",
+          "budget",
+          "venue",
+          "catering"
+        ]
+      }
+    },
+    {
+      "trace": "111ef5d1",
+      "arguments": {
+        "requirements": {
+          "city": "Namur",
+          "province": null,
+          "location_scope": "nearest",
+          "event_type": "afterwork",
+          "guests": 100,
+          "budget_total": null,
+          "date": "2026-12-05",
+          "weekday": "saturday",
+          "rental_period": "soiree",
+          "preferences": "premier samedi de decembre, bon repas complet",
+          "catering_constraints": {
+            "event_type": "afterwork",
+            "full_meal": true,
+            "guests": 100,
+            "service_type": "cocktail",
+            "city": null,
+            "province": null,
+            "max_price_per_person": null,
+            "max_budget": null,
+            "cuisine": null,
+            "dietary_options": null,
+            "ids": null
+          },
+          "venue_constraints": {
+            "city": null,
+            "province": null,
+            "event_type": null,
+            "guests": null,
+            "max_budget": null,
+            "rental_period": null,
+            "venue_type": null,
+            "space_type": null,
+            "seated": null,
+            "accessible": null,
+            "caterer_id": null,
+            "provider_id": null,
+            "ids": null
+          },
+          "provider_constraints": {
+            "city": null,
+            "province": null,
+            "category": null,
+            "max_budget": null,
+            "sound_level": null,
+            "light_level": null,
+            "video_level": null,
+            "setup_size": null,
+            "ids": null
+          }
+        },
+        "tasks": [
+          "planning",
+          "venue",
+          "catering",
+          "budget"
+        ]
+      }
+    },
+    {
+      "trace": "111ef5d1",
+      "arguments": {
+        "requirements": {
+          "city": "Namur",
+          "province": null,
+          "location_scope": "nearest",
+          "event_type": "afterwork",
+          "guests": 100,
+          "budget_total": null,
+          "date": "2026-12-05",
+          "weekday": "saturday",
+          "rental_period": "soiree",
+          "preferences": "premier samedi de decembre, bon repas complet",
+          "catering_constraints": {
+            "event_type": "afterwork",
+            "full_meal": true,
+            "guests": 100,
+            "service_type": "cocktail",
+            "city": null,
+            "province": null,
+            "max_price_per_person": null,
+            "max_budget": null,
+            "cuisine": null,
+            "dietary_options": null,
+            "ids": null
+          },
+          "venue_constraints": {
+            "city": null,
+            "province": null,
+            "event_type": null,
+            "guests": null,
+            "max_budget": null,
+            "rental_period": "soiree",
+            "venue_type": null,
+            "space_type": null,
+            "seated": null,
+            "accessible": null,
+            "caterer_id": null,
+            "provider_id": null,
+            "ids": null
+          },
+          "provider_constraints": {
+            "city": null,
+            "province": null,
+            "category": null,
+            "max_budget": null,
+            "sound_level": null,
+            "light_level": null,
+            "video_level": null,
+            "setup_size": null,
+            "ids": null
+          }
+        },
+        "tasks": [
+          "venue"
+        ],
+        "unset": [
+          "space_type",
+          "accessible"
+        ]
+      }
+    },
+    {
+      "trace": "111ef5d1",
+      "arguments": {
+        "requirements": {
+          "city": "Namur",
+          "province": null,
+          "location_scope": "province_fallback",
+          "event_type": "afterwork",
+          "guests": 100,
+          "budget_total": null,
+          "date": "2026-12-05",
+          "weekday": "saturday",
+          "rental_period": "soiree",
+          "preferences": "premier samedi de decembre, bon repas complet",
+          "catering_constraints": {
+            "event_type": "afterwork",
+            "full_meal": true,
+            "guests": 100,
+            "service_type": "cocktail",
+            "city": null,
+            "province": null,
+            "max_price_per_person": null,
+            "max_budget": null,
+            "cuisine": null,
+            "dietary_options": null,
+            "ids": null
+          },
+          "venue_constraints": {
+            "city": null,
+            "province": "Namur",
+            "event_type": "reception_entreprise",
+            "guests": null,
+            "max_budget": null,
+            "rental_period": "soiree",
+            "venue_type": null,
+            "space_type": null,
+            "seated": null,
+            "accessible": null,
+            "caterer_id": null,
+            "provider_id": null,
+            "ids": null
+          },
+          "provider_constraints": {
+            "city": null,
+            "province": null,
+            "category": null,
+            "max_budget": null,
+            "sound_level": null,
+            "light_level": null,
+            "video_level": null,
+            "setup_size": null,
+            "ids": null
+          }
+        },
+        "tasks": [
+          "venue"
+        ]
+      }
+    },
+    {
+      "trace": "111ef5d1",
+      "arguments": {
+        "requirements": {
+          "city": "Namur",
+          "province": "Namur",
+          "location_scope": "province_fallback",
+          "event_type": "afterwork",
+          "guests": 100,
+          "budget_total": null,
+          "date": "2026-12-05",
+          "weekday": "saturday",
+          "rental_period": "soiree",
+          "preferences": "premier samedi de decembre, bon repas complet",
+          "catering_constraints": {
+            "event_type": "afterwork",
+            "full_meal": true,
+            "ids": null
+          },
+          "provider_constraints": {
+            "city": null,
+            "province": "Namur",
+            "category": null,
+            "max_budget": null,
+            "sound_level": null,
+            "light_level": null,
+            "video_level": null,
+            "setup_size": null,
+            "ids": null
+          }
+        },
+        "tasks": [
+          "venue"
+        ]
+      }
+    }
+  ],
+  "event_data": {
+    "requirements": {
+      "city": "Namur",
+      "location_scope": "province_fallback",
+      "event_type": "afterwork",
+      "guests": 100,
+      "weekday": "saturday",
+      "rental_period": "soiree",
+      "preferences": "premier samedi de decembre, bon repas complet",
+      "catering_constraints": {
+        "event_type": "afterwork",
+        "guests": 100,
+        "service_type": "cocktail",
+        "full_meal": true
+      },
+      "date": "2026-12-05",
+      "venue_constraints": {
+        "rental_period": "soiree"
+      },
+      "province": "Namur",
+      "provider_constraints": {
+        "province": "Namur"
+      }
+    },
+    "results": {
+      "planning": {
+        "start": "2026-12-05T19:30",
+        "end": "2026-12-05T23:30"
+      },
+      "budget": null,
+      "venue": null,
+      "catering": null,
+      "providers": [],
+      "documents": [],
+      "weather": []
+    },
+    "tasks": {
+      "documents": {
+        "status": "pending",
+        "document": {
+          "kind": "email",
+          "recipient": null,
+          "purpose": "quote",
+          "request": "organise une soirée sur namur et génère moi le mails pour le traiter. tu n'as pas de limite de budget"
+        }
+      },
+      "planning": {
+        "status": "success",
+        "retryable": false
+      },
+      "budget": {
+        "status": "pending"
+      },
+      "venue": {
+        "status": "no_match",
+        "error": "Aucune salle compatible avec les contraintes obligatoires (location : soirée; effectif : 100; type d'événement : afterwork; ville : Namur; province : Namur) et les services demandés. Disponibilité non vérifiée.",
+        "error_kind": "business_impossibility",
+        "retryable": false
+      },
+      "catering": {
+        "status": "blocked",
+        "error": "Aucune salle sélectionnée : emplacement des services indéterminé.",
+        "retryable": true
+      },
+      "provider": {
+        "status": "blocked",
+        "error": "Aucune salle sélectionnée : emplacement des services indéterminé.",
+        "retryable": true
+      }
+    },
+    "workflow": {
+      "request": "organise une soirée sur namur et génère moi le mails pour le traiter. tu n'as pas de limite de budget",
+      "plan_approval": null,
+      "location_search": null,
+      "pending_input": null,
+      "revision": 6,
+      "document_archive": [],
+      "decision_archive": [],
+      "approval_archive": [],
+      "rejected_venues": [],
+      "venue_replacement_pending": false,
+      "budget_categories": null
+    }
+  }
+}

@@ -32,6 +32,12 @@ def _contains(values, expected):
     return any(_normalize(value) == _normalize(expected) for value in values)
 
 
+def normalize_event_type(value):
+    """Équivalences métier explicites ; aucune assimilation d'une soirée à un concert."""
+    normalized = _normalize(value).replace(" ", "_")
+    return {"afterwork": "reception_entreprise", "after_work": "reception_entreprise"}.get(normalized, normalized)
+
+
 def _read_catalog(filename, key):
     try:
         with (DATA_DIR / filename).open(encoding="utf-8") as source:
@@ -79,7 +85,7 @@ def _validate_filters(filters, schema):
             valid = _contains([x for x in spec["enum"] if x is not None], value)
         if not valid:
             return None, f"Paramètre invalide : {name}"
-        cleaned[name] = value.strip() if isinstance(value, str) else value
+        cleaned[name] = normalize_event_type(value) if name == "event_type" else value.strip() if isinstance(value, str) else value
     return cleaned, None
 
 
@@ -140,9 +146,10 @@ def _common_match(row, filters):
     if "ids" in filters and row["id"] not in filters["ids"]:
         return False
     if "event_type" in filters:
-        if not _contains(row["types_evenements_adaptes"], filters["event_type"]):
+        event_type = normalize_event_type(filters["event_type"])
+        if event_type not in [normalize_event_type(value) for value in row["types_evenements_adaptes"]]:
             return False
-        if _contains(row.get("types_evenements_interdits", []), filters["event_type"]):
+        if event_type in [normalize_event_type(value) for value in row.get("types_evenements_interdits", [])]:
             return False
     return True
 

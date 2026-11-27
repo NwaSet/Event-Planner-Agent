@@ -52,7 +52,6 @@ def _run_turn(conversation, request, directory, orchestrator_factory):
         data = orchestrator.event_data
         workflow = data.get("workflow", data)
         refused = ((workflow.get("plan_approval") or {}).get("approved") is False
-                   or any(item.get("approved") is False for item in data.get("results", data).get("documents", []))
                    or any(item.get("status") == "refused" for item in data.get("tasks", {}).values()))
         conversation["status"] = ("waiting" if workflow.get("pending_input") else "refused" if refused else
                                   {"success": "completed", "partial": "partial"}.get(orchestrator.last_status, "error"))

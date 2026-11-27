@@ -321,10 +321,6 @@ def test_real_student_request_integration_with_structural_fix_weather_finance_an
             if payload["task"] == "venue":
                 assert payload["location_search"]["selected_city"] == "Dinant"
                 assert "weather" not in payload  # Namur n'est pas la météo de Dinant
-            elif not compatible_venue:
-                if len(messages) == 2:
-                    return message(None, call("get_providers"))
-                return message(encode({"id": "002", "kit_id": 6}))
             return select_first(messages)
         assert agent == "Supervisor"
         turn = stages.count("Supervisor")
@@ -346,7 +342,7 @@ def test_real_student_request_integration_with_structural_fix_weather_finance_an
     assert supervisor.last_status == ("success" if compatible_venue else "partial")
     assert supervisor.event_data["results"]["planning"] == STUDENT_PLANNING
     assert supervisor.counters["llm_calls"] == (7 if compatible_venue else 6)
-    assert supervisor.counters["delegations"] == (3 if compatible_venue else 1)
+    assert supervisor.counters["delegations"] == (3 if compatible_venue else 2)
     assert get.call_count == 2 and len(supervisor.event_data["results"]["weather"]) == 1
     assert "05/12/2026 à 22:00" in output and "06/12/2026 à 04:00" in output
     assert "Météo consultée — Namur, 2026-12-05" in output
@@ -358,9 +354,9 @@ def test_real_student_request_integration_with_structural_fix_weather_finance_an
         assert "— Dinant" in output and "(partiel)" in output
     else:
         assert supervisor.event_data["results"]["venue"] is None
-        assert supervisor.event_data["results"]["providers"] == []
-        assert supervisor.event_data["tasks"]["provider"]["status"] == "blocked"
-        assert "emplacement des services indéterminé" in output
+        assert supervisor.event_data["results"]["providers"]
+        assert supervisor.event_data["tasks"]["provider"]["status"] == "success"
+        assert "future salle à confirmer" in output
         assert "Somme connue à mobiliser" not in output and ": 0,00 EUR" not in output
 
 
@@ -577,7 +573,7 @@ def test_repaired_first_task_is_not_stopped_before_supervisor_can_correct_it(mon
     assert supervisor.event_data["results"]["planning"] == PLANNING
 
 
-def test_services_wait_when_strict_venue_search_fails(monkeypatch):
+def test_independent_services_continue_when_strict_venue_search_fails(monkeypatch):
     turns, observed = [], []
 
     def fake(messages, tools=None, agent=None):
@@ -606,9 +602,10 @@ def test_services_wait_when_strict_venue_search_fails(monkeypatch):
     response = supervisor.run("Organise une soirée étudiante uniquement à Namur sans limite de budget. Date, salle, traiteur et prestataire.")
     data = supervisor.event_data
     assert supervisor.last_status == "partial" and data["results"]["planning"] is None and data["results"]["venue"] is None
-    assert data["results"]["catering"] is None and data["results"]["providers"] == []
-    assert observed == []
-    assert all(data["tasks"][task]["status"] == "blocked" for task in ("catering", "provider"))
+    assert data["results"]["catering"] and data["results"]["providers"]
+    assert set(observed) == {"catering", "provider"}
+    assert all(data["tasks"][task]["status"] == "success" for task in ("catering", "provider"))
+    assert "future salle à confirmer" in response
     assert all(text in response for text in ("Non résolu — planning", "Non résolu — salle", "soirée étudiante"))
 
 
