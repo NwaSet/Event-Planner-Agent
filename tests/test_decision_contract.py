@@ -34,8 +34,8 @@ def bound_run(student=True):
                    "Un anniversaire pour 100 personnes à Namur", interactive=True)
     run.remember({"city": "Namur", "guests": 100, "budget_total": 10000,
                   **({"event_type": "soiree_etudiante"} if student else {})}, ["venue", "budget", "planning"])
-    run.event_data["budget"] = {"venue": .4, "catering": .3, "provider": .3}
-    run.event_data["planning"] = {"start": "2026-11-28T20:00", "end": "2026-11-29T02:00" if student else "2026-11-28T23:00"}
+    run.event_data["results"]["budget"] = {"venue": .4, "catering": .3, "provider": .3}
+    run.event_data["results"]["planning"] = {"start": "2026-11-28T20:00", "end": "2026-11-29T02:00" if student else "2026-11-28T23:00"}
     if student:
         run.event_data["requirements"]["preferences"] = run.turn_request
     for task in ("budget", "planning"):
@@ -52,10 +52,8 @@ def test_decision_schema_requires_explicit_category_and_small_business_requireme
     assert "category" in parameters["required"]
     assert parameters["properties"]["category"]["enum"] == ["venue", "catering", "provider"]
     assert all(value in parameters["properties"]["category"]["description"] for value in ("venue", "catering", "provider"))
-    properties = parameters["properties"]["requirements"]["properties"]
-    assert {"city", "guests", "event_type"} <= set(properties)
-    assert not set(properties) & {"venue_filters", "catering_filters", "provider_filters", "provider_vat_rate",
-                                   "catering_distance_km", "provider_distance_km", "document_kind", "planning"}
+    assert set(parameters["properties"]) == {"instruction", "category"}
+    assert parameters["required"] == ["instruction", "category"]
 
 
 @pytest.mark.parametrize("category", [None, "", "salle", ["venue"]])
@@ -100,7 +98,7 @@ def test_compatible_candidates_require_a_qualitative_specialist_call(monkeypatch
         requirements={"venue_filters": {"accessible": True, "seated": True, "space_type": "les deux"},
                       "provider_vat_rate": .2, "provider_distance_km": 0, "document_kind": "email"})
     assert result["status"] == "success" and calls == ["decision making agent"]
-    assert run.event_data["venue"]["id"] == result["result"]["id"]
+    assert run.event_data["results"]["venue"]["id"] == result["result"]["id"]
 
 
 def test_logged_revision_does_not_reintroduce_invented_filters_or_restart_no_match():
@@ -130,7 +128,7 @@ def tool_message(name, **arguments):
 def test_real_scenario_two_messages_saved_reopened_and_useful_revision(monkeypatch, tmp_path):
     monkeypatch.setattr(agent_module, "chat", Mock(return_value=tool_message("clarify", question="Quel type et combien de personnes ?")))
     conversation = run_conversation("Organise un événement sur Namur.", directory=tmp_path, orchestrator_factory=create_orchestrator)
-    assert conversation["event_data"]["pending_input"]["kind"] == "clarification"
+    assert conversation["event_data"]["workflow"]["pending_input"]["kind"] == "clarification"
     answer = "Étudiant, pour 100 personnes, maximum 10 000 €, un samedi de préférence."
     stages = iter([
         tool_message("budgetary_agent", demande="Répartition", requirements={"city": "Namur", "guests": 100,
@@ -161,18 +159,18 @@ def test_real_scenario_two_messages_saved_reopened_and_useful_revision(monkeypat
     assert "documents" not in data["tasks"]
     assert not set(data["requirements"]) & {"provider_vat_rate", "provider_distance_km", "catering_distance_km",
                                             "venue_filters", "catering_filters", "provider_filters", "weekday"}
-    assert data["planning"] and data["budget"] and conversation["status"] == "partial"
+    assert data["results"]["planning"] and data["results"]["budget"] and conversation["status"] == "partial"
     assert agents.count("planning agent") == agents.count("budgetary agent") == 1
     assert "decision making agent" not in agents
     reopened = load_conversation(conversation["conversation_id"], tmp_path)
     assert reopened == conversation
-    original_plan, original_budget = copy.deepcopy(data["planning"]), copy.deepcopy(data["budget"])
+    original_plan, original_budget = copy.deepcopy(data["results"]["planning"]), copy.deepcopy(data["results"]["budget"])
     run = EventRun("Cherche dans les environs, dans la province de Namur", event_data=reopened["event_data"], interactive=True)
     supervisor = create_orchestrator()
     supervisor._bind(run)
     result = supervisor.fonctions["revise_event"](requirements={"location_scope": "province_fallback"})
-    assert result["status"] == "updated" and run.event_data["tasks"]["venue"]["status"] == "pending"
-    assert run.event_data["planning"] == original_plan and run.event_data["budget"] == original_budget
+    assert result["status"] == "updated" and run.event_data["tasks"]["venue"]["status"] == "invalidated"
+    assert run.event_data["results"]["planning"] == original_plan and run.event_data["results"]["budget"] == original_budget
     def choose(messages, **kwargs):
         payload = json.loads(messages[1]["content"])
         assert payload["location_search"]["expanded"]
@@ -187,7 +185,7 @@ def test_real_scenario_two_messages_saved_reopened_and_useful_revision(monkeypat
 
 def test_confirmed_constraints_are_reused_even_if_not_repeated_in_message():
     run, supervisor = bound_run(student=False)
-    run.event_data["requirements"]["venue_filters"] = {"accessible": True, "seated": True}
+    run.event_data["requirements"]["venue_constraints"] = {"accessible": True, "seated": True}
     captured = Mock(return_value={"status": "captured"})
     run.delegate = captured
     supervisor.fonctions["decision_making_agent"](category="venue", demande="Salle")
@@ -214,11 +212,11 @@ def test_explicit_financial_values_remain_valid_without_assumed_defaults(rate, d
 
 def test_explicit_email_request_still_creates_pending_plan_approval():
     run, supervisor = bound_run(student=False)
-    run.event_data["venue"] = {"id": "salle_010"}
+    run.event_data["results"]["venue"] = {"id": "salle_010"}
     run.event_data["tasks"]["venue"] = {"status": "success"}
     run.turn_request = "Rédige un email de demande de devis à la salle"
     assert supervisor.fonctions["writer_agent"](demande="Email", requirements={"document_kind": "email"}, tasks=["documents"])["status"] == "waiting"
-    assert run.event_data["pending_input"]["kind"] == "plan_approval"
+    assert run.event_data["workflow"]["pending_input"]["kind"] == "plan_approval"
     agent_module.chat.assert_not_called()
 
 
@@ -264,7 +262,7 @@ def test_unknown_null_budget_does_not_erase_known_budget_but_explicit_unlimited_
     run.turn_request = "Finalement, budget illimité"
     result = supervisor.fonctions["revise_event"](requirements={"budget_total": None})
     assert result["status"] == "updated"
-    assert "budget_total" not in run.event_data["requirements"] and run.event_data["budget"] is None
+    assert "budget_total" not in run.event_data["requirements"] and run.event_data["results"]["budget"] is None
 
 
 def test_unknown_headcount_and_budget_are_not_manufactured_from_schema_examples():

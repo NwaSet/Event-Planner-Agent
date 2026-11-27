@@ -45,7 +45,7 @@ def failed_event(request="Modifie l'événement", task="venue"):
     run.remember({"city": "Namur", "guests": 100, "location_scope": "city", "budget_total": 5000,
                   "planning": {"start": "2026-11-27T19:00", "end": "2026-11-27T23:00"}},
                  ["venue", "provider", "budget"])
-    run.event_data["budget"] = {"venue": .55, "catering": 0, "provider": .45}
+    run.event_data["results"]["budget"] = {"venue": .55, "catering": 0, "provider": .45}
     run.event_data["tasks"]["budget"] = {"status": "success"}
     run.event_data["tasks"][task] = {"status": "no_match", "retryable": False, "error": "Recherche précédente épuisée"}
     run.attempts[task] = {"count": 2, "input": {"ancienne": "recherche"}}
@@ -60,8 +60,8 @@ def test_explicit_revision_reopens_affected_failed_task_only(status, change):
     run.event_data["tasks"]["venue"]["status"] = status
     untouched = copy.deepcopy(run.event_data["tasks"]["planning"])
     run.revise_event(requirements=change)
-    assert all(run.event_data["requirements"][key] == value for key, value in change.items())
-    assert run.event_data["tasks"]["venue"]["status"] == "pending"
+    assert all(run.event_data["requirements"][key.replace("_filters", "_constraints")] == value for key, value in change.items())
+    assert run.event_data["tasks"]["venue"]["status"] == "invalidated"
     assert "venue" not in run.attempts
     assert run.event_data["tasks"]["planning"] == untouched
     assert run.event_data["tasks"]["provider"] == {"status": "pending"}
@@ -107,7 +107,7 @@ def test_local_provider_cap_in_logged_delegation_keeps_global_budget(monkeypatch
                            tasks=["provider"])
     assert outcome["status"] == "success"
     assert run.event_data["requirements"]["budget_total"] == 5000
-    assert run.event_data["budget"] == before["budget"]
+    assert run.event_data["results"]["budget"] == before["results"]["budget"]
     for task in ("venue", "planning", "budget"):
         assert run.event_data["tasks"][task] == before["tasks"][task]
     assert agent_module.chat.call_count == 1
@@ -118,9 +118,9 @@ def test_logged_misrouted_provider_budget_revision_does_not_reallocate_event():
     before = copy.deepcopy(run.event_data)
     run.revise_event(requirements={"budget_total": 2500}, replace=[], remove=[], unset=[])
     assert run.event_data["requirements"]["budget_total"] == 5000
-    assert run.event_data["requirements"]["provider_filters"]["max_budget"] == 2500
-    assert run.event_data["tasks"]["provider"]["status"] == "pending"
-    assert run.event_data["budget"] == before["budget"]
+    assert run.event_data["requirements"]["provider_constraints"]["max_budget"] == 2500
+    assert run.event_data["tasks"]["provider"]["status"] == "invalidated"
+    assert run.event_data["results"]["budget"] == before["results"]["budget"]
     for task in ("venue", "planning", "budget"):
         assert run.event_data["tasks"][task] == before["tasks"][task]
 
@@ -135,7 +135,7 @@ def test_unchanged_revision_does_not_reset_attempts_or_reopen_failures():
 
 def test_reopened_saved_failure_executes_only_affected_specialist(tmp_path, monkeypatch):
     run = failed_event()
-    run.event_data["providers"] = [{"id": "005", "kit_id": 1}]
+    run.event_data["results"]["providers"] = [{"id": "005", "kit_id": 1}]
     run.event_data["tasks"]["provider"] = {"status": "success"}
     original = copy.deepcopy(run.event_data)
     conversation = create_conversation("Salle à Namur")
@@ -159,7 +159,7 @@ def test_reopened_saved_failure_executes_only_affected_specialist(tmp_path, monk
                                     "Tu peux chercher dans la province", directory=tmp_path, orchestrator_factory=create_orchestrator)
     assert updated["event_data"]["tasks"]["venue"]["status"] == "success"
     for field in ("planning", "budget", "providers"):
-        assert updated["event_data"][field] == original[field]
+        assert updated["event_data"]["results"][field] == original["results"][field]
     assert agents == ["Supervisor", "Supervisor", "decision making agent"]
     assert updated["conversation_id"] == conversation["conversation_id"]
     assert len(list(tmp_path.glob("*.json"))) == 1
@@ -188,8 +188,8 @@ def test_explicit_global_budget_still_changes(user_request):
     run = failed_event(user_request)
     run.revise_event(requirements={"budget_total": 4000})
     assert run.event_data["requirements"]["budget_total"] == 4000
-    assert run.event_data["tasks"]["budget"]["status"] == "pending"
-    assert run.event_data["budget"] is None
+    assert run.event_data["tasks"]["budget"]["status"] == "invalidated"
+    assert run.event_data["results"]["budget"] is None
 
 
 def test_local_provider_request_does_not_launch_budgetary():
@@ -257,7 +257,7 @@ def test_global_budget_change_in_delegation_requires_explicit_revision_without_l
     assert run.event_data == before and run.scope_declared is False
     run.revise_event(requirements={"budget_total": 6000})
     assert run.event_data["requirements"]["budget_total"] == 6000
-    assert run.event_data["tasks"]["budget"]["status"] == "pending"
+    assert run.event_data["tasks"]["budget"]["status"] == "invalidated"
 
 
 def test_persistent_search_filter_changes_only_through_explicit_revision():
@@ -273,13 +273,13 @@ def test_persistent_search_filter_changes_only_through_explicit_revision():
 
 def test_budget_result_reopens_previously_blocked_selection_but_not_planning(monkeypatch):
     run = failed_event(task="provider")
-    run.event_data["budget"] = None
+    run.event_data["results"]["budget"] = None
     run.event_data["tasks"]["budget"] = {"status": "pending"}
     run.event_data["tasks"]["provider"] = {"status": "blocked", "retryable": False}
-    old_planning = copy.deepcopy(run.event_data["planning"])
+    old_planning = copy.deepcopy(run.event_data["results"]["planning"])
     budget, _, _, _ = create_all_agents()
     monkeypatch.setattr(agent_module, "chat", Mock(return_value=message(json.dumps({"venue": .55, "catering": 0, "provider": .45}))))
     assert run.delegate(budget, "Répartition corrigée", "budget")["status"] == "success"
-    assert run.event_data["tasks"]["provider"]["status"] == "pending"
+    assert run.event_data["tasks"]["provider"]["status"] == "invalidated"
     assert "provider" not in run.attempts
-    assert run.event_data["planning"] == old_planning
+    assert run.event_data["results"]["planning"] == old_planning

@@ -1,0 +1,118 @@
+{
+  "event_data": {
+    "request": "Organise une soiree a Namur pour 100 personnes",
+    "requirements": {
+      "city": "Namur",
+      "guests": 100,
+      "budget_total": 10000
+    },
+    "planning": {
+      "start": "2026-12-05T19:00",
+      "end": "2026-12-05T23:00"
+    },
+    "budget": {
+      "venue": 0.6,
+      "catering": 0,
+      "provider": 0.4
+    },
+    "venue": {
+      "id": "salle_054"
+    },
+    "catering": null,
+    "providers": [
+      {
+        "id": "005",
+        "kit_id": 1
+      }
+    ],
+    "documents": [],
+    "tasks": {
+      "planning": {
+        "status": "pending"
+      },
+      "budget": {
+        "status": "pending"
+      },
+      "venue": {
+        "status": "pending"
+      },
+      "provider": {
+        "status": "pending"
+      }
+    },
+    "plan_approval": null,
+    "weather": [],
+    "location_search": null,
+    "pending_input": null,
+    "revision": 1,
+    "document_archive": [],
+    "decision_archive": [],
+    "approval_archive": [],
+    "selection_filters": {},
+    "rejected_venues": [],
+    "venue_replacement_pending": false,
+    "budget_categories": null
+  },
+  "sizes": {
+    "supervisor": 21809,
+    "planning": 422,
+    "budget": 1221,
+    "venue": 404,
+    "provider": 1692,
+    "documents": 2857
+  },
+  "measurements": {
+    "before": {
+      "supervisor": {
+        "utf8_bytes": 23893,
+        "estimated_tokens_chars_div_4": 5891
+      },
+      "planning": {
+        "utf8_bytes": 422,
+        "estimated_tokens_chars_div_4": 106
+      },
+      "budget": {
+        "utf8_bytes": 1221,
+        "estimated_tokens_chars_div_4": 301
+      },
+      "venue": {
+        "utf8_bytes": 404,
+        "estimated_tokens_chars_div_4": 101
+      },
+      "provider": {
+        "utf8_bytes": 1692,
+        "estimated_tokens_chars_div_4": 423
+      },
+      "documents": {
+        "utf8_bytes": 2857,
+        "estimated_tokens_chars_div_4": 708
+      }
+    },
+    "after": {
+      "supervisor": {
+        "utf8_bytes": 14596,
+        "estimated_tokens_chars_div_4": 3600
+      },
+      "planning": {
+        "utf8_bytes": 104,
+        "estimated_tokens_chars_div_4": 26
+      },
+      "budget": {
+        "utf8_bytes": 509,
+        "estimated_tokens_chars_div_4": 124
+      },
+      "venue": {
+        "utf8_bytes": 169,
+        "estimated_tokens_chars_div_4": 42
+      },
+      "provider": {
+        "utf8_bytes": 142,
+        "estimated_tokens_chars_div_4": 36
+      },
+      "documents": {
+        "utf8_bytes": 2343,
+        "estimated_tokens_chars_div_4": 580
+      }
+    }
+  }
+}

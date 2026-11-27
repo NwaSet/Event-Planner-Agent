@@ -52,7 +52,7 @@ def test_planning_does_not_skip_budgetary_announced_later_in_the_same_batch(monk
     supervisor = create_orchestrator()
     supervisor.run("Planning et budget de 10000 euros", interactive=True)
     assert seen == ["Supervisor", "planning agent", "budgetary agent"]
-    assert supervisor.event_data["planning"] == PLANNING
+    assert supervisor.event_data["results"]["planning"] == PLANNING
     assert supervisor.event_data["tasks"]["planning"]["status"] == supervisor.event_data["tasks"]["budget"]["status"] == "success"
 
 
@@ -80,7 +80,7 @@ def test_batch_scope_reaches_the_selection_after_planning_and_budget(monkeypatch
     supervisor = create_orchestrator()
     supervisor.run("Salle à Namur pour 100 personnes, 10000 euros", interactive=True)
     assert seen == ["Supervisor", "planning agent", "budgetary agent", "decision making agent"]
-    assert supervisor.event_data["venue"]
+    assert supervisor.event_data["results"]["venue"]
     assert all(item["status"] == "success" for item in supervisor.event_data["tasks"].values())
 
 
@@ -149,7 +149,7 @@ def test_clarification_still_stops_before_later_delegations(monkeypatch):
     result = supervisor.run("Un événement", interactive=True)
     assert result == "Quelle ville ?" and chat.call_count == 1
     assert supervisor.event_data["tasks"] == {}
-    assert supervisor.event_data["pending_input"]["kind"] == "clarification"
+    assert supervisor.event_data["workflow"]["pending_input"]["kind"] == "clarification"
 
 
 def test_pending_plan_approval_still_stops_before_later_revision(monkeypatch):
@@ -160,7 +160,7 @@ def test_pending_plan_approval_still_stops_before_later_revision(monkeypatch):
     supervisor = create_orchestrator()
     supervisor.run("Rédige un email pour un événement de 100 personnes", interactive=True)
     assert chat.call_count == 1
-    assert supervisor.event_data["pending_input"]["kind"] == "plan_approval"
+    assert supervisor.event_data["workflow"]["pending_input"]["kind"] == "plan_approval"
     assert supervisor.event_data["requirements"].get("guests") != 150
 
 
@@ -179,7 +179,7 @@ def test_malformed_tasks_in_one_call_do_not_abort_the_rest_of_the_batch(monkeypa
     monkeypatch.setattr(agent_module, "chat", fake)
     supervisor = create_orchestrator()
     supervisor.run("Une date", interactive=True)
-    assert supervisor.event_data["planning"] == PLANNING
+    assert supervisor.event_data["results"]["planning"] == PLANNING
     assert seen == ["Supervisor", "planning agent"]
 
 
@@ -189,7 +189,7 @@ def test_human_refusal_still_stops_before_later_tool_calls(monkeypatch, refuse_p
 
     saved = event_state.EventRun("Rédige un email")
     saved.event_data["requirements"].update(document_kind="email", budget_total=10000)
-    saved.event_data["budget"] = {"venue": 0, "catering": 0, "provider": 0}
+    saved.event_data["results"]["budget"] = {"venue": 0, "catering": 0, "provider": 0}
     saved.event_data["tasks"]["budget"] = {"status": "success"}
     ask = Mock(side_effect=[{"approved": False}] if refuse_plan else [{"approved": True}, {"approved": False}])
     monkeypatch.setattr(tools, "ask_user", ask)
@@ -219,4 +219,4 @@ def test_human_refusal_still_stops_before_later_tool_calls(monkeypatch, refuse_p
         assert seen == ["Supervisor"] and ask.call_count == 1
     else:
         assert seen == ["Supervisor", "writer agent"] and ask.call_count == 2
-        assert supervisor.event_data["documents"][0]["content"] == "  Objet : brouillon exact.  "
+        assert supervisor.event_data["results"]["documents"][0]["content"] == "  Objet : brouillon exact.  "

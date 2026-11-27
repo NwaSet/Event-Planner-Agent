@@ -31,7 +31,7 @@ def previous_event(*, failed_provider=False):
     run = EventRun("Organiser une soirée à Namur pour 150 personnes, budget 10000 euros", interactive=True)
     run.remember({"city": "Namur", "guests": 150, "budget_total": 10000, "rental_period": "soiree"},
                  ["planning", "budget", "venue"])
-    run.event_data.update(planning={"start": "2026-12-05T19:00", "end": "2026-12-05T23:00"},
+    run.event_data["results"].update(planning={"start": "2026-12-05T19:00", "end": "2026-12-05T23:00"},
                           budget={"venue": 1, "catering": 0, "provider": 0}, venue={"id": "salle_054"})
     for task in ("planning", "budget", "venue"):
         run.event_data["tasks"][task] = {"status": "success"}
@@ -51,10 +51,10 @@ def test_added_provider_requires_new_allocation_before_search(failed_provider, a
     _, _, _, decision = create_all_agents()
     result = run.delegate(decision, "Prestataire technique", "provider", tasks=["provider"] if announced else None)
     assert result["status"] == "not_ready" and result["requires"] == "budget"
-    assert run.event_data["budget"] is None
-    assert run.event_data["tasks"]["budget"]["status"] == "pending"
+    assert run.event_data["results"]["budget"] is None
+    assert run.event_data["tasks"]["budget"]["status"] == "invalidated"
     assert run.event_data["requirements"]["budget_total"] == 10000
-    assert run.event_data["venue"] == previous["venue"] and run.event_data["planning"] == previous["planning"]
+    assert run.event_data["results"]["venue"] == previous["results"]["venue"] and run.event_data["results"]["planning"] == previous["results"]["planning"]
     assert run.counters["delegations"] == 0
     agent_module.chat.assert_not_called()
 
@@ -66,7 +66,7 @@ def tool(name, **arguments):
 
 def test_saved_event_reallocates_once_then_decision_really_selects_provider(tmp_path, monkeypatch):
     previous = previous_event(failed_provider=True)
-    conversation = create_conversation(previous["request"])
+    conversation = create_conversation(previous["workflow"]["request"])
     conversation["event_data"] = previous
     save_conversation(conversation, tmp_path)
     agents = []
@@ -92,8 +92,8 @@ def test_saved_event_reallocates_once_then_decision_really_selects_provider(tmp_
     updated = continue_conversation(load_conversation(conversation["conversation_id"], tmp_path),
                                     "trouve le prestataire technique", directory=tmp_path, orchestrator_factory=create_orchestrator)
     assert updated["event_data"]["tasks"]["provider"]["status"] == "success"
-    assert updated["event_data"]["planning"] == previous["planning"]
-    assert updated["event_data"]["venue"] == previous["venue"]
+    assert updated["event_data"]["results"]["planning"] == previous["results"]["planning"]
+    assert updated["event_data"]["results"]["venue"] == previous["results"]["venue"]
     assert updated["event_data"]["requirements"]["budget_total"] == 10000
     assert agents == ["Supervisor", "Supervisor", "budgetary agent", "Supervisor", "decision making agent"]
     assert len(list(tmp_path.glob("*.json"))) == 1
@@ -109,7 +109,7 @@ def test_explicit_zero_allocation_for_known_category_does_not_reallocate_in_a_lo
     first = run.delegate(decision, "Prestataire", "provider")
     assert first["status"] == "no_match"
     assert run.delegate(decision, "Même recherche", "provider")["status"] == "reused"
-    assert run.event_data["budget"] == previous["budget"]
+    assert run.event_data["results"]["budget"] == previous["results"]["budget"]
     assert run.event_data["tasks"]["budget"]["status"] == "success"
     agent_module.chat.assert_not_called()
 
@@ -117,7 +117,7 @@ def test_explicit_zero_allocation_for_known_category_does_not_reallocate_in_a_lo
 def test_no_global_ceiling_does_not_trigger_budgetary(monkeypatch):
     previous = previous_event()
     previous["requirements"].pop("budget_total")
-    previous["budget"] = None
+    previous["results"]["budget"] = None
     previous["tasks"].pop("budget")
     run = EventRun("Prestataire technique", event_data=previous, interactive=True)
     _, _, _, decision = create_all_agents()
@@ -133,15 +133,15 @@ def test_no_global_ceiling_does_not_trigger_budgetary(monkeypatch):
 
 def test_covered_allocation_and_successful_service_are_reused_without_more_calls():
     previous = previous_event()
-    previous["budget"] = {"venue": .6, "catering": 0, "provider": .4}
+    previous["results"]["budget"] = {"venue": .6, "catering": 0, "provider": .4}
     previous["budget_categories"] = ["venue", "provider"]
     # La salle 054 autorise le prestataire 005 (catalogue conservé).
-    previous["providers"] = [{"id": "005", "kit_id": 1}]
+    previous["results"]["providers"] = [{"id": "005", "kit_id": 1}]
     previous["tasks"]["provider"] = {"status": "success"}
     run = EventRun("Prestataire technique", event_data=previous, interactive=True)
     _, _, _, decision = create_all_agents()
     assert run.delegate(decision, "Prestataire", "provider")["status"] == "reused"
-    assert run.event_data["budget"] == previous["budget"]
+    assert run.event_data["results"]["budget"] == previous["results"]["budget"]
     assert run.event_data["tasks"]["budget"]["status"] == "success"
     agent_module.chat.assert_not_called()
 
@@ -149,13 +149,13 @@ def test_covered_allocation_and_successful_service_are_reused_without_more_calls
 def test_new_budget_scope_archives_old_approval_once_and_keeps_exact_document():
     previous = previous_event()
     previous["plan_approval"] = {"approved": True, "plan": {}, "content": "Plan approuvé", "revision": 1}
-    previous["documents"] = [{"content": " \r\nAncien email.  ", "approved": True, "revision": 1}]
+    previous["results"]["documents"] = [{"content": " \r\nAncien email.  ", "approved": True, "revision": 1}]
     run = EventRun("Ajoute le prestataire technique", event_data=previous, interactive=True)
     _, _, _, decision = create_all_agents()
     assert run.delegate(decision, "Prestataire", "provider")["status"] == "not_ready"
-    revision = run.event_data["revision"]
-    assert run.event_data["plan_approval"] is None and run.event_data["documents"] == []
-    assert run.event_data["document_archive"] == previous["documents"]
+    revision = run.event_data["workflow"]["revision"]
+    assert run.event_data["workflow"]["plan_approval"] is None and run.event_data["results"]["documents"] == []
+    assert run.event_data["workflow"]["document_archive"] == previous["results"]["documents"]
     assert run.delegate(decision, "Prestataire", "provider")["status"] == "not_ready"
-    assert run.event_data["revision"] == revision
-    assert len(run.event_data["approval_archive"]) == len(run.event_data["document_archive"]) == 1
+    assert run.event_data["workflow"]["revision"] == revision
+    assert len(run.event_data["workflow"]["approval_archive"]) == len(run.event_data["workflow"]["document_archive"]) == 1

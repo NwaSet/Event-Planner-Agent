@@ -23,7 +23,8 @@ def show_result(conversation):
     status = conversation["status"]
     color = "green" if status == "completed" else "red" if status == "error" else "yellow"
     trace.surrond(conversation["messages"][-1]["content"], STATUS_LABELS[status], color)
-    pending = conversation["event_data"].get("pending_input")
+    state = conversation["event_data"]
+    pending = state.get("workflow", state).get("pending_input")
     if pending and pending["kind"] in ("plan_approval", "email_approval"):
         trace.console.print("Validez-vous ce plan ? (oui/non)" if pending["kind"] == "plan_approval" else
                             "Validez-vous ce brouillon exact ? (oui/non)")
@@ -57,8 +58,10 @@ def show_history(directory=None):
 
 def conversation_loop(conversation, directory=None, exit_code=0):
     trace.surrond(conversation["title"], "Conversation — Quitter ou Entrée pour revenir au menu", "cyan")
-    if conversation["event_data"].get("pending_input"):
-        trace.surrond(conversation["event_data"]["pending_input"]["content"], "Question ou validation en attente", "yellow")
+    state = conversation["event_data"]
+    pending = state.get("workflow", state).get("pending_input")
+    if pending:
+        trace.surrond(pending["content"], "Question ou validation en attente", "yellow")
     while True:
         request = trace.console.input("Vous > ")
         if not request.strip() or request.strip().casefold().rstrip(".! ") in ("quitter", "/quitter"):

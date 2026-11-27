@@ -1,0 +1,1 @@
+CITIES = ['Alost', 'Anderlecht', 'Anvers', 'Arlon', 'Bruges', 'Bruxelles', 'Courtrai', 'Dinant', 'Gand', 'Genk', 'Halle', 'Hasselt', 'Liège', 'Louvain', 'Malines', 'Marche-en-Famenne', 'Mons', 'Namur', 'Nivelles', 'Tournai', 'Verviers', 'Wavre']

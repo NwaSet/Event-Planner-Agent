@@ -52,8 +52,8 @@ def test_search_rejects_kit_whose_vat_and_travel_exceed_budget():
 
 def test_subtotal_never_adds_unknown_vat_ht_to_ttc_or_deposit_to_expenses():
     run = EventRun("Salle et prestataire")
-    run.event_data["venue"] = {"id": "salle_001"}
-    run.event_data["providers"] = [{"id": "005", "kit_id": 1}]
+    run.event_data["results"]["venue"] = {"id": "salle_001"}
+    run.event_data["results"]["providers"] = [{"id": "005", "kit_id": 1}]
     costs = run.costs()
     assert costs["known_ttc_subtotal"] == costs["known"]["venue_ttc"]
     assert costs["known_cash_required"] == costs["known_ttc_subtotal"] + costs["deposit"]
@@ -72,7 +72,7 @@ def test_invalid_financial_inputs_are_rejected(field, value):
 
 def test_provider_only_unknown_vat_and_travel_never_displays_a_zero_total():
     run = EventRun("Prestataire")
-    run.event_data["providers"] = [{"id": "005", "kit_id": 1}]
+    run.event_data["results"]["providers"] = [{"id": "005", "kit_id": 1}]
     costs = run.costs()
     before = deepcopy(costs)
     output = "\n".join(financial_lines(costs))
@@ -88,8 +88,8 @@ def test_provider_only_unknown_vat_and_travel_never_displays_a_zero_total():
 def test_mixed_ht_ttc_cash_and_deposit_are_explicitly_partial():
     run = EventRun("Salle et prestataire")
     run.remember({"rental_period": "soiree"})
-    run.event_data["venue"] = {"id": "salle_001"}
-    run.event_data["providers"] = [{"id": "005", "kit_id": 1}]
+    run.event_data["results"]["venue"] = {"id": "salle_001"}
+    run.event_data["results"]["providers"] = [{"id": "005", "kit_id": 1}]
     costs = run.costs()
     output = "\n".join(financial_lines(costs))
     assert "Sous-total des postes TTC connus (partiel) : " + euros(costs["known"]["venue_ttc"]) in output
@@ -102,7 +102,7 @@ def test_mixed_ht_ttc_cash_and_deposit_are_explicitly_partial():
 def test_known_provider_vat_still_reports_unknown_travel_and_partial_ttc():
     run = EventRun("Prestataire")
     run.remember({"provider_vat_rate": .21})
-    run.event_data["providers"] = [{"id": "005", "kit_id": 1}]
+    run.event_data["results"]["providers"] = [{"id": "005", "kit_id": 1}]
     output = "\n".join(financial_lines(run.costs()))
     assert "TVA au taux fourni de 21 %" in output
     assert "Sous-total des postes TTC connus (partiel)" in output

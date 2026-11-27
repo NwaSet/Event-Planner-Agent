@@ -242,9 +242,10 @@ def test_actual_supervisor_snapshot_keeps_selected_names_and_finances_after_cata
     supervisor = create_orchestrator()
     conversation = controller.run_conversation("Prestataire son", directory=tmp_path, orchestrator_factory=lambda: supervisor)
     assert conversation["status"] == "completed" and chat.call_count == 3
-    assert conversation["event_details"]["providers"][0]["nom"] == "B-Sound Events"
-    assert conversation["event_details"]["costs"]["known"]["provider_ht"] == 3000
-    assert conversation["event_data"]["providers"] == [{"id": "002", "kit_id": 6}]
+    assert conversation["event_details"] == {}
+    assert "B-Sound Events" in conversation["messages"][-1]["content"]
+    assert "3 000,00" in conversation["messages"][-1]["content"]
+    assert conversation["event_data"]["results"]["providers"] == [{"id": "002", "kit_id": 6}]
     monkeypatch.setattr(tools, "_read_catalog", Mock(side_effect=AssertionError("Pas de catalogue à la réouverture")))
     monkeypatch.setattr(tools, "ask_user", Mock(side_effect=AssertionError("Pas de validation à la réouverture")))
     monkeypatch.setattr(agent, "chat", Mock(side_effect=AssertionError("Pas de LLM à la réouverture")))

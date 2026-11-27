@@ -199,7 +199,11 @@ class Agent:
         Transforme cet agent en outil utilisable par un autre agent (pattern Supervisor).
         Renvoie un couple (fonction, schema), comme les autres outils.
         """
-        def delegate(demande, **kwargs):
+        def delegate(demande=None, *, instruction=None, **kwargs):
+            if instruction is not None:
+                if demande is not None and instruction != demande:
+                    raise ValueError("Instructions de délégation contradictoires.")
+                demande = instruction
             return handler(self, demande, **kwargs) if handler else self.run(demande)
 
         delegate.is_delegation = True

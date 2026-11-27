@@ -12,6 +12,7 @@ from .agents.search import (CATALOGS, check_schedule, compact_tool, load_catalog
                             compatible, normalize_arguments, event_type_error)
 
 
+PENDING = ("pending", "invalidated")
 TASKS = ("planning", "budget", "venue", "catering", "provider", "documents")
 REQUIREMENT_PROPERTIES = {
     "city": {"type": "string"}, "province": {"type": "string"},
@@ -30,15 +31,48 @@ REQUIREMENT_PROPERTIES = {
                  "required": ["start", "end"], "additionalProperties": False},
     "music_required": {"type": "boolean", "description": "Exigence musicale explicite ; omettre si inconnue."},
     "music_end": {"type": "string", "description": "Fin de musique imposée YYYY-MM-DDTHH:MM si distincte."},
-    "preferences": {"type": "string"}, "assumptions": {"type": "string"},
+    "preferences": {"type": "string"},
     "document_kind": {"type": "string", "enum": ["email", "synthesis"]},
     "catering_distance_km": {"type": "number"},
     "provider_distance_km": {"type": "number"},
     "provider_vehicles": {"type": "integer"},
     "provider_vat_rate": {"type": "number"},
-    **{category + "_filters": schema["function"]["parameters"]
+    **{category + "_constraints": {"type": "object", "additionalProperties": False,
+                                  "description": "Exigences métier explicites : plafond propre au service, IDs autorisés, caractéristiques imposées.",
+                                  "properties": {key: value for key, value in schema["function"]["parameters"]["properties"].items() if key != "limit"}}
        for category, (_, _, schema, _) in CATALOGS.items()},
 }
+
+
+def business_requirements(requirements):
+    """Lire les anciens noms sans conserver les paramètres techniques de pagination."""
+    if not isinstance(requirements, dict):
+        return requirements
+    result = deepcopy(requirements)
+    for category in CATALOGS:
+        legacy = result.pop(category + "_filters", None)
+        key = category + "_constraints"
+        if legacy is not None:
+            result[key] = {**legacy, **result.get(key, {})} if isinstance(legacy, dict) else legacy
+        if isinstance(result.get(key), dict):
+            result[key].pop("limit", None)
+            if not result[key]:
+                result.pop(key)
+    return result
+
+
+def compact_plan(plan, revision):
+    """Photographie d'accord : contraintes et IDs, jamais les fiches catalogue."""
+    results = plan.get("results", plan)
+    providers = results.get("providers", [results["provider"]] if results.get("provider") else [])
+    def selection(value, *keys):
+        return {key: value[key] for key in keys if key in value} if value else None
+    return {"requirements": business_requirements(plan.get("requirements", {})),
+            "planning": results.get("planning"), "budget": results.get("budget"),
+            "venue": selection(results.get("venue"), "id"),
+            "catering": selection(results.get("catering"), "id", "formula_id"),
+            "providers": [selection(item, "id", "kit_id") for item in providers],
+            "weather": results.get("weather", []), "revision": revision}
 
 
 def encode(value):
@@ -94,15 +128,40 @@ class EventRun:
         self.answered_question = None
         self.resume_writer = None
         self.search_filters = {}  # Essais de recherche du tour, jamais des exigences persistantes.
-        self.event_data = {"request": request, "requirements": {}, "planning": None,
-                           "budget": None, "venue": None, "catering": None,
-                           "providers": [], "documents": [], "tasks": {}, "plan_approval": None, "weather": [],
+        self.event_data = {"requirements": {},
+                           "results": {"planning": None, "budget": None, "venue": None, "catering": None,
+                                       "providers": [], "documents": [], "weather": []},
+                           "tasks": {}, "workflow": {"request": request, "plan_approval": None,
                            "location_search": None, "pending_input": None, "revision": 0,
                            "document_archive": [], "decision_archive": [], "approval_archive": [],
-                           "selection_filters": {}, "rejected_venues": [], "venue_replacement_pending": False,
-                           "budget_categories": None}
+                           "rejected_venues": [], "venue_replacement_pending": False,
+                           "budget_categories": None}}
         if event_data:
-            self.event_data.update(deepcopy(event_data))
+            restored = deepcopy(event_data)
+            results = restored.pop("results", {})
+            for key in self.event_data["results"]:
+                if key in restored:
+                    results[key] = restored.pop(key)
+            workflow = restored.pop("workflow", {})
+            for key in self.event_data["workflow"]:
+                if key in restored:
+                    workflow[key] = restored.pop(key)
+            self.event_data["results"].update(results)
+            self.event_data["workflow"].update(workflow)
+            for key in ("requirements", "tasks"):
+                if key in restored:
+                    self.event_data[key] = restored[key]
+        self.event_data["requirements"] = {key: value for key, value in business_requirements(self.event_data["requirements"]).items()
+                                           if key in REQUIREMENT_PROPERTIES}
+        workflow = self.event_data["workflow"]
+        for approval in [workflow["plan_approval"], workflow["pending_input"], *workflow["approval_archive"]]:
+            if approval and "plan" in approval:
+                approval["plan"] = compact_plan(approval["plan"], approval.get("revision", workflow["revision"]))
+        for outcome in self.event_data["tasks"].values():
+            for key in ("task", "result", "details"):
+                outcome.pop(key, None)
+            if outcome.get("status") == "no_match":
+                outcome["retryable"] = False
         self.catalogs = load_catalogs()
         # Garde-fou ciblé : conserver une catégorie explicitement nommée dans la demande.
         # Les autres interprétations et les choix qualitatifs restent confiés aux agents.
@@ -130,7 +189,7 @@ class EventRun:
                 locations.append((city, "city" if strict else "province_fallback"))
         if len(locations) == 1 and ("city" not in req or req["city"] == locations[0][0]):
             req["city"], req["location_scope"] = locations[0]
-        headcounts = re.findall(r"\b(?:pour|de)\s+(\d+)\s+(?:personnes|invites|participants)\b", wording)
+        headcounts = re.findall(r"\b(?:pour|de)\s+(\d+)\s+(?:personnes|invites|participants|convives)\b", wording)
         if len(set(headcounts)) == 1 and int(headcounts[0]) > 0:
             req["guests"] = int(headcounts[0])
         if re.search(r"\bpour (?:un |une? )?anniversaire\b", wording):
@@ -155,6 +214,7 @@ class EventRun:
             return
         if requirements is None:
             requirements = {}
+        requirements = business_requirements(requirements)
         if isinstance(requirements, dict) and "tasks" in requirements:
             nested = requirements["tasks"]
             if not isinstance(nested, list) or not nested or any(task not in TASKS for task in nested):
@@ -179,12 +239,12 @@ class EventRun:
         if isinstance(requirements.get("event_type"), str):
             requirements["event_type"] = tools._normalize(requirements["event_type"]).replace(" ", "_")
         for field, filters in requirements.items():
-            if field.endswith("_filters") and isinstance(filters, dict):
-                filters = normalize_arguments(filters, CATALOGS[field[:-8]][2]["function"]["parameters"]["properties"])
+            if field.endswith("_constraints") and isinstance(filters, dict):
+                filters = normalize_arguments(filters, CATALOGS[field[:-12]][2]["function"]["parameters"]["properties"])
                 requirements[field] = filters
                 if isinstance(filters.get("event_type"), str):
                     filters["event_type"] = tools._normalize(filters["event_type"]).replace(" ", "_")
-        problem = event_type_error(requirements.get("event_type"), self.turn_request if self.interactive else self.event_data["request"])
+        problem = event_type_error(requirements.get("event_type"), self.turn_request if self.interactive else self.event_data["workflow"]["request"])
         if problem:
             raise ValueError(problem)
         previous = self.event_data["requirements"]
@@ -196,7 +256,7 @@ class EventRun:
             if (key in ("city", "province") and key in previous and isinstance(value, str)
                     and tools._normalize(previous[key]) == tools._normalize(value)):
                 requirements[key] = value = previous[key]
-            if key.endswith("_filters") and isinstance(value, dict) and isinstance(previous.get(key), dict):
+            if key.endswith("_constraints") and isinstance(value, dict) and isinstance(previous.get(key), dict):
                 if any(field in previous[key] and previous[key][field] != content for field, content in value.items()):
                     raise ConstraintRevisionRequired(f"Contrainte déjà enregistrée : {key}. Utilisez revise_event.")
                 requirements[key] = value = {**previous[key], **value}
@@ -226,20 +286,20 @@ class EventRun:
         if total is not None and (type(total) not in (int, float) or not math.isfinite(total) or total < 0):
             raise ValueError("Budget total invalide.")
         for category in CATALOGS:
-            filters = requirements.get(category + "_filters", {})
+            filters = requirements.get(category + "_constraints", {})
             if not isinstance(filters, dict):
                 raise ValueError("Filtres attendus sous forme d'objet.")
             filters = normalize_arguments(filters, CATALOGS[category][2]["function"]["parameters"]["properties"])
             cleaned, problem = tools._validate_filters(filters, CATALOGS[category][2])
             if problem:
                 raise ValueError(problem)
-            problem = event_type_error(cleaned.get("event_type"), self.turn_request if self.interactive else self.event_data["request"])
+            problem = event_type_error(cleaned.get("event_type"), self.turn_request if self.interactive else self.event_data["workflow"]["request"])
             if problem:
                 raise ValueError(problem)
             # Garder ids=[] : c'est une contrainte impossible, pas une absence de filtre.
-            requirements[category + "_filters"] = {**cleaned, **({"ids": []} if filters.get("ids") == [] else {})}
-            if not requirements[category + "_filters"]:
-                requirements.pop(category + "_filters")
+            requirements[category + "_constraints"] = {**cleaned, **({"ids": []} if filters.get("ids") == [] else {})}
+            if not requirements[category + "_constraints"]:
+                requirements.pop(category + "_constraints")
             for key in ("guests", "event_type", "rental_period"):
                 if key in cleaned and key in requirements and cleaned[key] != requirements[key]:
                     raise ValueError(f"Exigences contradictoires pour {key}.")
@@ -256,8 +316,8 @@ class EventRun:
         # Vérifier les décisions déjà acquises si de nouvelles contraintes arrivent.
         self.event_data["requirements"] = requirements
         try:
-            if self.event_data["planning"]:
-                self.validate_planning(encode(self.event_data["planning"]))
+            if self.event_data["results"]["planning"]:
+                self.validate_planning(encode(self.event_data["results"]["planning"]))
             self.check_selections()
         except (ValueError, TypeError, KeyError):
             self.event_data["requirements"] = previous
@@ -270,7 +330,7 @@ class EventRun:
         if requirements.get("document_kind"):
             self.event_data["tasks"].setdefault("documents", {"status": "pending"})
         if "planning" in requirements:
-            self.event_data["planning"] = deepcopy(requirements["planning"])
+            self.event_data["results"]["planning"] = deepcopy(requirements["planning"])
             self.event_data["tasks"]["planning"] = {"status": "success"}
 
     def check_selections(self):
@@ -288,7 +348,7 @@ class EventRun:
                 raise ValueError(f"La nouvelle contrainte est incompatible avec {category} déjà choisi.")
             if category != "venue":
                 field, offer_key = ("formules", "formula_id") if category == "catering" else ("kits", "kit_id")
-                selection = self.event_data["catering"] if category == "catering" else self.event_data["providers"][0]
+                selection = self.event_data["results"]["catering"] if category == "catering" else self.event_data["results"]["providers"][0]
                 if not any(offer["id"] == selection[offer_key] for offer in found["candidates"][0][field]):
                     raise ValueError(f"Offre {category} déjà choisie incompatible avec la nouvelle contrainte.")
 
@@ -326,51 +386,32 @@ class EventRun:
             raise ValueError(f"La somme des proportions doit valoir {expected}.")
         if self.interactive:
             return  # record réévalue les choix avec la nouvelle allocation validée.
-        previous = self.event_data["budget"]
-        self.event_data["budget"] = budget
+        previous = self.event_data["results"]["budget"]
+        self.event_data["results"]["budget"] = budget
         try:
             self.check_selections()
         finally:
-            self.event_data["budget"] = previous
+            self.event_data["results"]["budget"] = previous
 
     def selected_row(self, category):
         if category == "provider":
-            selection = self.event_data["providers"][0] if self.event_data["providers"] else None
+            selection = self.event_data["results"]["providers"][0] if self.event_data["results"]["providers"] else None
         else:
-            selection = self.event_data[category]
+            selection = self.event_data["results"][category]
         if selection:
             return next(row for row in self.catalogs[category] if row["id"] == selection["id"])
         return None
 
     def context(self, task):
-        req = self.event_data["requirements"]
-        if task in ("planning", "budget"):
-            fields = ("date", "weekday", "planning", "city", "event_type", "music_end", "preferences", "assumptions")
-            if task == "budget":
-                fields = ("budget_total", "guests", "preferences")
-            result = {"requirements": {key: req[key] for key in fields if key in req}, "today": self.today,
-                    "current_request": self.turn_request,
-                    "request": self.event_data["request"],
-                    "categories": [key for key in CATALOGS if key in self.event_data["tasks"]] if self.scope_declared or self.interactive else None}
-            if task == "budget" and self.interactive:
-                result["current_costs"] = self.costs()
-            if task == "planning" and self.selected_row("venue"):
-                result["venue_constraints"] = self.selected_row("venue")["contraintes"]
-            if task == "planning":
-                result["previous_planning"] = next((item["result"] for item in reversed(self.event_data["decision_archive"])
-                                                     if item["task"] == "planning"), None)
-            return result
+        """Contexte de contrôle Python ; les fiches restent locales à la recherche."""
+        if task == "planning":
+            return self.get_planning_context()
+        if task == "budget":
+            return self.get_budget_context()
         if task == "documents":
-            context = self.consolidated()
-            context["request"] = self.event_data["request"]
-            context["current_request"] = self.turn_request
-            for field in ("document_archive", "decision_archive", "approval_archive"):
-                context.pop(field, None)
-            context["contact_note"] = "Aucune coordonnée de contact dans le catalogue ; ne pas inventer d'adresse email. Brouillon uniquement."
-            context.pop("documents")
-            context["tasks"].pop("documents", None)
-            return context
-        filters = {key: value for key, value in req.get(task + "_filters", {}).items() if value is not None}
+            return self.get_writer_context()
+        req = self.event_data["requirements"]
+        filters = {key: value for key, value in req.get(task + "_constraints", {}).items() if value is not None}
         for key, value in self.search_filters.get(task, {}).items():
             if key == "max_budget":
                 filters[key] = min(filters.get(key, value), value)
@@ -386,14 +427,14 @@ class EventRun:
             if req.get("rental_period"):
                 filters.setdefault("rental_period", req["rental_period"])
             for field in ("city", "province"):
-                if field == "city" and self.event_data["location_search"] and self.event_data["location_search"]["expanded"]:
+                if field == "city" and self.event_data["workflow"]["location_search"] and self.event_data["workflow"]["location_search"]["expanded"]:
                     continue  # La ville souhaitée reste dans requirements ; les filtres effectifs sont provinciaux.
                 if field in req:
                     if field in filters and tools._normalize(filters[field]) != tools._normalize(req[field]):
                         raise ValueError(f"Lieu contradictoire : {field}.")
                     filters[field] = req[field]
-            if self.event_data["location_search"] and self.event_data["location_search"]["expanded"]:
-                filters.setdefault("province", self.event_data["location_search"]["province"])
+            if self.event_data["workflow"]["location_search"] and self.event_data["workflow"]["location_search"]["expanded"]:
+                filters.setdefault("province", self.event_data["workflow"]["location_search"]["province"])
         venue = self.selected_row("venue")
         if task == "catering" and not venue:
             province = req.get("province")
@@ -406,23 +447,76 @@ class EventRun:
                 # La commune du traiteur reste un filtre de siège, distinct de sa zone d'intervention.
                 filters.setdefault("province", province)
         total = req.get("budget_total")
-        if total is not None and self.event_data["budget"]:
-            allocated = round(total * self.event_data["budget"][task], 2)
+        if total is not None and self.event_data["results"]["budget"]:
+            allocated = round(total * self.event_data["results"]["budget"][task], 2)
             filters["max_budget"] = min(filters.get("max_budget", allocated), allocated)
         weather = self.relevant_weather(filters.get("city")) if task == "venue" else None
-        return {"filters": filters, "planning": self.event_data["planning"], "date": req.get("date"),
+        return {"filters": filters, "planning": self.event_data["results"]["planning"], "date": req.get("date"),
                 **({"weather": weather} if weather else {}),
                 "financial": {key: req[key] for key in FINANCIAL_FIELDS if key.startswith(task + "_") and key in req},
-                "request": self.turn_request if self.interactive else self.event_data["request"],
+                "request": self.turn_request if self.interactive else self.event_data["workflow"]["request"],
                 "current_request": self.turn_request,
                 "venue": venue if task != "venue" else None, "today": self.today,
                 "music_required": req.get("music_required", True), "music_end": req.get("music_end"),
-                "space_type": req.get("venue_filters", {}).get("space_type"),
-                "preferences": req.get("preferences", ""), "assumptions": req.get("assumptions", "")}
+                "space_type": req.get("venue_constraints", {}).get("space_type"),
+                "preferences": req.get("preferences", "")}
+
+    def get_planning_context(self):
+        req = self.event_data["requirements"]
+        fields = ("date", "weekday", "planning", "city", "music_end", "preferences")
+        context = {"requirements": {key: req[key] for key in fields if key in req}, "today": self.today}
+        previous = next((item["result"] for item in reversed(self.event_data["workflow"]["decision_archive"])
+                         if item["task"] == "planning"), None)
+        if previous:
+            context["previous_planning"] = previous
+        venue = self.selected_row("venue")
+        if venue:
+            context["venue_constraints"] = {"heure_fin_musique": venue["contraintes"]["heure_fin_musique"]}
+        weather = self.relevant_weather(req.get("city"))
+        if weather:
+            context["weather"] = weather
+        return context
+
+    def get_budget_context(self):
+        req = self.event_data["requirements"]
+        context = {"requirements": {key: req[key] for key in ("budget_total", "preferences") if key in req},
+                   "categories": [key for key in CATALOGS if key in self.event_data["tasks"]]
+                                 if self.scope_declared or self.interactive else None}
+        if self.event_data["results"]["budget"]:
+            context["previous_allocation"] = self.event_data["results"]["budget"]
+        costs = self.costs()
+        if costs["known"]:
+            context["current_costs"] = {key: costs[key] for key in ("known", "deposit", "missing")}
+        return context
+
+    def get_decision_context(self, category, context=None):
+        context = deepcopy(self.context(category) if context is None else context)
+        # La compatibilité est calculée en Python ; seul l'identifiant dépendant est utile au modèle.
+        venue = context.pop("venue", None)
+        if venue:
+            context["venue_id"] = venue["id"]
+        for key in ("request", "current_request", "assumptions"):
+            context.pop(key, None)
+        if category != "venue":
+            for key in ("music_required", "music_end", "space_type"):
+                context.pop(key, None)
+        return {key: value for key, value in context.items() if value is not None and value != "" and value != {}}
+
+    def get_writer_context(self):
+        req = self.event_data["requirements"]
+        approval = self.event_data["workflow"]["plan_approval"]
+        return {"document_kind": req.get("document_kind", "synthesis"),
+                "requirements": {key: req[key] for key in ("city", "event_type", "guests", "preferences") if key in req},
+                "planning": self.event_data["results"]["planning"],
+                **{category: self.selection_details(category) for category in CATALOGS},
+                "costs": self.costs(),
+                "plan_approved": approval.get("approved") if approval else None,
+                "revision": self.event_data["workflow"]["revision"],
+                "contact_note": "Coordonnées absentes du catalogue : ne pas inventer d'adresse. Brouillon uniquement ; aucune disponibilité ni réservation confirmée."}
 
     def services_available(self, venue):
         """Écarter une impasse objective sans choisir les fournisseurs à la place du LLM."""
-        if venue["id"] in self.event_data["rejected_venues"]:
+        if venue["id"] in self.event_data["workflow"]["rejected_venues"]:
             return False
         for category in ("catering", "provider"):
             if category not in self.event_data["tasks"]:
@@ -432,7 +526,7 @@ class EventRun:
             selected = self.selected_row(category)
             if selected:
                 if not compatible(category, selected, context):
-                    if self.event_data["venue_replacement_pending"]:
+                    if self.event_data["workflow"]["venue_replacement_pending"]:
                         continue  # Le nouveau choix de salle fera réévaluer ce fournisseur seulement.
                     return False
                 continue
@@ -461,16 +555,19 @@ class EventRun:
             return result
         expanded = {key: value for key, value in filters.items() if key != "city"}
         expanded["province"] = province
-        self.event_data["location_search"] = {
+        self.event_data["workflow"]["location_search"] = {
             "requested_city": filters["city"], "expanded": True, "province": province,
             "basis": "Même province du catalogue ; proximité et temps de trajet non établis."}
         return search_candidates(task, expanded, catalogs=self.catalogs, context=context, accept=accept)
 
     def delegate(self, agent, demande, task, *, requirements=None, tasks=None):
+        if isinstance(requirements, dict):
+            requirements = {key.replace("_filters", "_constraints"): deepcopy(value)
+                            for key, value in requirements.items()}
         self.turn_actions = True
         if task not in TASKS:
             return {"status": "error", "error": "Catégorie de tâche inconnue."}
-        if self.event_data["pending_input"] and self.interactive:
+        if self.event_data["workflow"]["pending_input"] and self.interactive:
             return {"status": "waiting", "task": task, "reason": "Réponse humaine attendue."}
         if self.plan_refused() and (not self.interactive or task == "documents"):
             return {"status": "reused", "task": task, "outcome": "refused",
@@ -489,7 +586,7 @@ class EventRun:
                 temporary = None
                 if task in CATALOGS and isinstance(requirements, dict):
                     requirements = deepcopy(requirements)
-                    temporary = requirements.pop(task + "_filters", None)
+                    temporary = requirements.pop(task + "_constraints", None)
                     if temporary is not None:
                         temporary = normalize_arguments(temporary, CATALOGS[task][2]["function"]["parameters"]["properties"])
                         cleaned, problem = tools._validate_filters(temporary, CATALOGS[task][2])
@@ -498,7 +595,7 @@ class EventRun:
                         cleaned = {**cleaned, **({"ids": []} if temporary.get("ids") == [] else {})}
                         persistent = {key: value for key, value in cleaned.items() if key not in ("max_budget", "ids", "limit")}
                         if persistent:
-                            requirements[task + "_filters"] = persistent
+                            requirements[task + "_constraints"] = persistent
                         temporary = {key: value for key, value in cleaned.items() if key in ("max_budget", "ids", "limit")}
             self.remember(requirements, tasks)
             if self.interactive:
@@ -531,9 +628,9 @@ class EventRun:
         if self.interactive and task == "documents" and self.event_data["tasks"][task]["status"] == "skipped":
             self.event_data["tasks"][task] = {"status": "pending"}
         if (task == "documents" and self.event_data["requirements"].get("document_kind") == "email"
-                and "venue" in self.event_data["tasks"] and not self.event_data["venue"]):
+                and "venue" in self.event_data["tasks"] and not self.event_data["results"]["venue"]):
             venue_status = self.event_data["tasks"]["venue"]["status"]
-            if venue_status == "pending":
+            if venue_status in PENDING:
                 return {"status": "not_ready", "task": task, "requires": "venue"}
             reused = self.begin_attempt(task, {"venue": None})
             if reused:
@@ -542,16 +639,16 @@ class EventRun:
         is_email = task == "documents" and self.event_data["requirements"].get("document_kind") == "email"
         if is_email:
             pending = [name for name, outcome in self.event_data["tasks"].items()
-                       if name != "documents" and outcome["status"] == "pending"]
+                       if name != "documents" and outcome["status"] in PENDING]
             if pending:
                 return {"status": "not_ready", "task": task, "requires": pending[0]}
         if task == "budget" and self.event_data["requirements"].get("budget_total") is None:
             return self.record(task, {"status": "skipped", "reason": "Aucun plafond connu : répartition inutile."})
         # Seul un plafond connu exige une répartition avant les achats multiples.
-        if task in CATALOGS and self.event_data["requirements"].get("budget_total") is not None and not self.event_data["budget"]:
+        if task in CATALOGS and self.event_data["requirements"].get("budget_total") is not None and not self.event_data["results"]["budget"]:
             self.event_data["tasks"].setdefault("budget", {"status": "pending"})
             budget_status = self.event_data["tasks"].get("budget", {}).get("status", "pending")
-            if budget_status != "pending":
+            if budget_status not in PENDING:
                 return self.record(task, {"status": "blocked", "error": "Répartition du budget indisponible ; plafond conservé."})
             return {"status": "not_ready", "task": task, "requires": "budget"}
         try:
@@ -574,13 +671,14 @@ class EventRun:
         if is_email:
             approved = self.approve_plan()
             if approved is None:
-                self.event_data["pending_input"]["resume"] = {"demande": demande}
+                self.event_data["workflow"]["pending_input"]["resume"] = {"demande": demande}
                 return {"status": "waiting", "task": task}
             if not approved:
                 return self.record(task, {"status": "refused",
                     "error": "Plan global refusé ; génération des emails arrêtée. Aucun email généré ni envoyé."})
             context = self.context(task)
-        payload = {"task": task, "demande": demande, **context}
+        payload = {"task": task, "instruction": demande,
+                   **(self.get_decision_context(task, context) if task in CATALOGS else context)}
         original_functions, original_schemas = agent.fonctions, agent.schemas
         approval = {}
         if task in CATALOGS:
@@ -589,10 +687,10 @@ class EventRun:
             # avec son outil avant de sélectionner ; pas de catalogue arbitraire injecté.
             result = (self.search_options(task, context["filters"], context, accept)
                       if context["filters"] or context.get("venue") else {"status": "needs_search", "candidates": []})
-            if task == "venue" and self.event_data["location_search"]:
+            if task == "venue" and self.event_data["workflow"]["location_search"]:
                 context["filters"] = dict(result.get("filters", context["filters"]))
                 payload["filters"] = context["filters"]
-                payload["location_search"] = deepcopy(self.event_data["location_search"])
+                payload["location_search"] = deepcopy(self.event_data["workflow"]["location_search"])
                 payload.pop("weather", None)  # La prévision de la ville initiale ne vaut pas pour une autre commune.
             if result["status"] not in ("matched", "needs_search"):
                 if task == "venue" and result["status"] == "no_match":
@@ -601,10 +699,7 @@ class EventRun:
                 outcome = self.record(task, {"status": result["status"], "error": result.get("error", "Recherche impossible.")})
                 return outcome
             proposed = list(result["candidates"])
-            selection_filters = dict(context["filters"])
             payload["search"] = result
-            if payload.get("venue"):
-                payload["venue"] = {key: payload["venue"][key] for key in ("id", "lieux", "equipements", "contraintes")}
 
             def search(**extra):
                 extra = normalize_arguments(extra, CATALOGS[task][2]["function"]["parameters"]["properties"])
@@ -620,13 +715,11 @@ class EventRun:
                 if result["candidates"] and {"limit": 5, **requested} == {"limit": 5, **context["filters"]}:
                     return {"status": "reused", "source": "search.candidates dans le contexte initial"}
                 found = self.search_options(task, requested, context, accept)
-                if task == "venue" and self.event_data["location_search"]:
-                    found["location_search"] = deepcopy(self.event_data["location_search"])
+                if task == "venue" and self.event_data["workflow"]["location_search"]:
+                    found["location_search"] = deepcopy(self.event_data["workflow"]["location_search"])
                 # Une recherche corrigée remplace les anciens candidats : ils peuvent
                 # ne plus respecter le type, la capacité ou les exclusions précisés.
                 proposed[:] = found["candidates"]
-                selection_filters.clear()
-                selection_filters.update(found.get("filters", requested))
                 return found
 
             _, schema = compact_tool(task)
@@ -655,8 +748,8 @@ class EventRun:
                     if not isinstance(message, str) or not message.strip():
                         raise ValueError("Le brouillon doit être un texte non vide.")
                     approval["content"] = message
-                    self.event_data["pending_input"] = {"kind": "email_approval", "content": message,
-                                                        "revision": self.event_data["revision"]}
+                    self.event_data["workflow"]["pending_input"] = {"kind": "email_approval", "content": message,
+                                                        "revision": self.event_data["workflow"]["revision"]}
                     return {"status": "waiting", "reason": "Validation du brouillon au prochain message."}
                 if approval:
                     return {"approved": approval["approved"], "already_asked": True}
@@ -677,7 +770,7 @@ class EventRun:
                                completed=(lambda: bool(approval)) if is_email else None,
                                completed_output=(lambda: approval.get("content")) if task == "documents" else None,
                                compact_output=task in CATALOGS and bool(proposed))
-            if task == "documents" and self.interactive and self.event_data["pending_input"]:
+            if task == "documents" and self.interactive and self.event_data["workflow"]["pending_input"]:
                 outcome = {"status": "waiting"}
             elif task == "documents" and approval:
                 outcome = {"status": "success" if approval["approved"] else "refused",
@@ -696,20 +789,6 @@ class EventRun:
                        "code": "impossible" if isinstance(error, TaskImpossible) else "execution_error"}
         finally:
             agent.fonctions, agent.schemas = original_functions, original_schemas
-        if task in CATALOGS and outcome["status"] == "success":
-            # Conserver les paramètres réellement utilisés pour calculer le choix validé.
-            if self.interactive:
-                self.event_data["selection_filters"][task] = {key: value for key, value in selection_filters.items() if key != "limit"}
-                # Conserver les critères extraits par le spécialiste, sans figer les plafonds
-                # calculés ni les contraintes de la salle dans les exigences des tours suivants.
-                discovered = {key: value for key, value in selection_filters.items()
-                              if key not in ("limit", "max_budget", "ids") and key not in context["filters"]}
-                if discovered:
-                    field = task + "_filters"
-                    self.event_data["requirements"][field] = {**self.event_data["requirements"].get(field, {}), **discovered}
-            else:
-                self.event_data["requirements"][task + "_filters"] = {
-                    key: value for key, value in selection_filters.items() if key != "limit"}
         outcome = self.record(task, outcome)
         return outcome
 
@@ -717,7 +796,7 @@ class EventRun:
         """Deux tentatives au plus, la seconde seulement si le contexte utile change."""
         previous = self.event_data["tasks"].get(task, {})
         attempt = self.attempts.get(task, {"count": 0, "input": None})
-        if previous.get("status") not in (None, "pending"):
+        if previous.get("status") not in (None, *PENDING):
             reason = None
             if not previous.get("retryable", False):
                 reason = "Résultat validé ou erreur permanente pour cette exécution."
@@ -737,7 +816,7 @@ class EventRun:
     def observe_weather(self, day, city):
         """Conserver le résultat de l'outil actuel, une seule consultation par ville/date/run."""
         city = city.strip() if isinstance(city, str) else city
-        for observation in self.event_data["weather"]:
+        for observation in self.event_data["results"]["weather"]:
             if observation["date"] == day and str(observation["city"]).casefold() == str(city).casefold():
                 return deepcopy(observation)
         result = tools.get_meteo(day=day, city=city)
@@ -747,18 +826,18 @@ class EventRun:
         else:
             observation.update(status="available", resolved_city=result["city"], country=result.get("country"),
                                forecast={key: result[key] for key in tools.WEATHER_FIELDS})
-        self.event_data["weather"].append(observation)
+        self.event_data["results"]["weather"].append(observation)
         return deepcopy(observation)
 
     def relevant_weather(self, city):
-        planning = self.event_data["planning"]
+        planning = self.event_data["results"]["planning"]
         day = planning["start"][:10] if planning else self.event_data["requirements"].get("date")
-        return next((deepcopy(item) for item in self.event_data["weather"]
+        return next((deepcopy(item) for item in self.event_data["results"]["weather"]
                      if day and city and item["date"] == day and isinstance(item["city"], str)
                      and tools._normalize(item["city"]) == tools._normalize(city)), None)
 
     def can_repair(self):
-        if self.event_data["pending_input"]:
+        if self.event_data["workflow"]["pending_input"]:
             return False
         if self.plan_refused():
             return False
@@ -770,38 +849,36 @@ class EventRun:
         field = {"provider": "providers", "documents": "documents"}.get(task, task)
         if self.interactive and outcome["status"] == "success" and task != "documents":
             value = [outcome["result"]] if field == "providers" else outcome["result"]
-            if self.event_data[field] != value:
+            if self.event_data["results"][field] != value:
                 self.material_change("Décision actualisée : " + task)
         if outcome.get("code") in ("invalid_output", "interrupted_output"):
             outcome = {**outcome, "error_kind": "temporary_output"}
         elif outcome.get("code") == "impossible" or outcome["status"] == "no_match":
             outcome = {**outcome, "error_kind": "business_impossibility"}
-        retryable = (outcome["status"] in ("error", "no_match", "invalid_filters", "blocked")
+        retryable = (outcome["status"] in ("error", "invalid_filters", "blocked")
                      and outcome.get("code") != "llm_error")
         outcome = {"task": task, **outcome, "retryable": retryable and self.attempts.get(task, {}).get("count", 0) < 2}
-        self.event_data["tasks"][task] = {key: value for key, value in outcome.items() if key != "result"}
+        self.event_data["tasks"][task] = {key: value for key, value in outcome.items() if key not in ("task", "result", "details")}
         if outcome["status"] == "success":
             field = {"provider": "providers", "documents": "documents"}.get(task, task)
-            self.event_data[field] = [outcome["result"]] if field in ("providers", "documents") else outcome["result"]
+            self.event_data["results"][field] = [outcome["result"]] if field in ("providers", "documents") else outcome["result"]
             if task == "budget" and self.interactive:
-                self.event_data["budget_categories"] = [category for category in CATALOGS if category in self.event_data["tasks"]]
-            if task in CATALOGS:
-                outcome["details"] = self.selection_details(task)
+                self.event_data["workflow"]["budget_categories"] = [category for category in CATALOGS if category in self.event_data["tasks"]]
             if self.interactive and task in ("planning", "budget", "venue"):
                 self.recheck_choices()
                 if task == "venue":
-                    self.event_data["venue_replacement_pending"] = False
+                    self.event_data["workflow"]["venue_replacement_pending"] = False
                 self.reopen_changed_failures(failed)
         elif task == "documents" and outcome["status"] == "refused" and "result" in outcome:
-            self.event_data["documents"] = [outcome["result"]]
+            self.event_data["results"]["documents"] = [outcome["result"]]
         return outcome
 
     def refresh_budget_scope(self):
         """Une prestation ajoutée exige une allocation qui la couvre, pas un faux plafond nul."""
-        budget = self.event_data["budget"]
+        budget = self.event_data["results"]["budget"]
         if not budget or self.event_data["requirements"].get("budget_total") is None:
             return
-        covered = self.event_data["budget_categories"]
+        covered = self.event_data["workflow"]["budget_categories"]
         if covered is None:
             # Anciennes sauvegardes : seules les catégories financées attestent leur prise en compte.
             covered = [category for category, fraction in budget.items() if fraction > 0]
@@ -809,47 +886,46 @@ class EventRun:
         if requested - set(covered):
             self.material_change("Prestation ajoutée à la répartition du budget")
             self.invalidate("budget", "Nouvelle prestation : Budgetary doit réviser la répartition existante.")
-            self.event_data["budget_categories"] = None
+            self.event_data["workflow"]["budget_categories"] = None
 
     def material_change(self, reason):
         """Les accords et textes restent attachés à leur ancienne version, jamais réutilisés."""
-        revision = self.event_data["revision"]
-        approval = self.event_data["plan_approval"]
+        revision = self.event_data["workflow"]["revision"]
+        approval = self.event_data["workflow"]["plan_approval"]
         if approval:
-            self.event_data["approval_archive"].append({**deepcopy(approval), "revision": approval.get("revision", revision),
+            self.event_data["workflow"]["approval_archive"].append({**deepcopy(approval), "revision": approval.get("revision", revision),
                                                        "reason": reason})
-        for document in self.event_data["documents"]:
-            self.event_data["document_archive"].append({**deepcopy(document), "revision": document.get("revision", revision)})
-        pending = self.event_data["pending_input"]
+        for document in self.event_data["results"]["documents"]:
+            self.event_data["workflow"]["document_archive"].append({**deepcopy(document), "revision": document.get("revision", revision)})
+        pending = self.event_data["workflow"]["pending_input"]
         if pending and pending["kind"] == "email_approval":
-            self.event_data["document_archive"].append({"content": pending["content"], "approved": None, "revision": revision})
-        self.event_data["revision"] += 1
-        self.event_data["plan_approval"] = None
-        self.event_data["documents"] = []
-        self.event_data["pending_input"] = None
+            self.event_data["workflow"]["document_archive"].append({"content": pending["content"], "approved": None, "revision": revision})
+        self.event_data["workflow"]["revision"] += 1
+        self.event_data["workflow"]["plan_approval"] = None
+        self.event_data["results"]["documents"] = []
+        self.event_data["workflow"]["pending_input"] = None
         if "documents" in self.event_data["tasks"] and self.event_data["tasks"]["documents"]["status"] != "pending":
             self.event_data["tasks"]["documents"] = {"status": "skipped", "reason": "Nouvelle rédaction à demander après modification du plan."}
 
     def invalidate(self, task, reason, *, remove=False):
         field = {"provider": "providers", "documents": "documents"}.get(task, task)
-        previous = self.event_data[field]
+        previous = self.event_data["results"][field]
         if previous and task != "documents":
-            self.event_data["decision_archive"].append({"task": task, "result": deepcopy(previous),
-                                                        "revision": self.event_data["revision"], "reason": reason})
-        self.event_data[field] = [] if field in ("providers", "documents") else None
-        self.event_data["selection_filters"].pop(task, None)
+            self.event_data["workflow"]["decision_archive"].append({"task": task, "result": deepcopy(previous),
+                                                        "revision": self.event_data["workflow"]["revision"], "reason": reason})
+        self.event_data["results"][field] = [] if field in ("providers", "documents") else None
         self.attempts.pop(task, None)
         if remove:
             self.event_data["tasks"].pop(task, None)
         else:
-            self.event_data["tasks"][task] = {"status": "pending", "error": reason}
+            self.event_data["tasks"][task] = {"status": "invalidated", "error": reason}
 
     def recheck_choices(self):
         """Capacité, horaires, offres, plafonds et fournisseurs imposés, sans nouveau choix Python."""
         invalidated = []
         for category in CATALOGS:
             field = "providers" if category == "provider" else category
-            selection = (self.event_data[field][0] if self.event_data[field] else None) if category == "provider" else self.event_data[field]
+            selection = (self.event_data["results"][field][0] if self.event_data["results"][field] else None) if category == "provider" else self.event_data["results"][field]
             if not selection:
                 continue
             context = self.context(category)
@@ -867,8 +943,10 @@ class EventRun:
 
     def revise_event(self, requirements=None, replace=None, remove=None, unset=None):
         """Appliquer une modification explicite du Supervisor ; transaction locale et contrôles existants."""
-        requirements = self.scoped_budget({} if requirements is None else requirements)
+        requirements = self.scoped_budget(business_requirements({} if requirements is None else requirements))
         replace, remove, unset = ([] if value is None else value for value in (replace, remove, unset))
+        if isinstance(unset, list):
+            unset = [key.replace("_filters", "_constraints") if isinstance(key, str) else key for key in unset]
         if not isinstance(requirements, dict) or set(requirements) - set(REQUIREMENT_PROPERTIES):
             raise ValueError("Champs d'exigences inconnus.")
         for values, allowed in ((replace, TASKS), (remove, ("venue", "catering", "provider", "documents")), (unset, REQUIREMENT_PROPERTIES)):
@@ -888,7 +966,7 @@ class EventRun:
         for key, value in requirements.items():
             if value is None:
                 candidate.pop(key, None)
-            elif key.endswith("_filters") and isinstance(value, dict):
+            elif key.endswith("_constraints") and isinstance(value, dict):
                 candidate[key] = {**candidate.get(key, {}), **value}
             else:
                 candidate[key] = value
@@ -900,7 +978,7 @@ class EventRun:
         for key in ("guests", "event_type", "rental_period"):
             if key in requirements or key in unset:
                 for category in CATALOGS:
-                    filters = candidate.get(category + "_filters", {})
+                    filters = candidate.get(category + "_constraints", {})
                     if key in filters:
                         if key in candidate:
                             filters[key] = candidate[key]
@@ -909,22 +987,23 @@ class EventRun:
         geographic_change = bool((set(requirements) | set(unset)) & {"city", "province", "location_scope"})
         if geographic_change:
             for key in ("city", "province"):
-                candidate.get("venue_filters", {}).pop(key, None)
-        if "venue" in replace and before["venue"]:
-            filters = candidate.get("venue_filters", {})
+                candidate.get("venue_constraints", {}).pop(key, None)
+        if "venue" in replace and before["results"]["venue"]:
+            filters = candidate.get("venue_constraints", {})
             if "ids" in filters:
-                remaining = [value for value in filters["ids"] if value != before["venue"]["id"]]
+                remaining = [value for value in filters["ids"] if value != before["results"]["venue"]["id"]]
                 if remaining:
                     filters["ids"] = remaining
                 else:
                     filters.pop("ids")
         for task in remove:
-            candidate.pop("document_kind" if task == "documents" else task + "_filters", None)
+            candidate.pop("document_kind" if task == "documents" else task + "_constraints", None)
         try:
             # Valider les nouvelles exigences sans laisser d'anciennes décisions bloquer leur mise à jour.
             original = self.event_data
-            self.event_data = {**deepcopy(before), "requirements": {}, "planning": None, "venue": None,
-                               "catering": None, "providers": [], "tasks": {}}
+            self.event_data = {**deepcopy(before), "requirements": {}, "tasks": {},
+                               "results": {**deepcopy(before["results"]), "planning": None, "venue": None,
+                                           "catering": None, "providers": []}}
             try:
                 self.remember(candidate)
                 candidate = deepcopy(self.event_data["requirements"])
@@ -946,26 +1025,26 @@ class EventRun:
             for category in CATALOGS:
                 shared_change = changed & {"budget_total", "date", "weekday", "planning", "music_end", "music_required"}
                 selection_change = category != "provider" and changed & {"city", "province", "location_scope", "guests", "event_type", "rental_period"}
-                if category + "_filters" in changed or category in replace + remove or shared_change or selection_change:
+                if category + "_constraints" in changed or category in replace + remove or shared_change or selection_change:
                     self.search_filters.pop(category, None)
             if geographic_change:
-                self.event_data["location_search"] = None
+                self.event_data["workflow"]["location_search"] = None
             if before["requirements"].get("budget_total") != candidate.get("budget_total"):
                 self.invalidate("budget", "Budget modifié.", remove=candidate.get("budget_total") is None)
             if schedule_changed:
                 self.invalidate("planning", "Date ou horaires à réévaluer.")
                 if candidate.get("planning"):
-                    self.event_data["planning"] = deepcopy(candidate["planning"])
+                    self.event_data["results"]["planning"] = deepcopy(candidate["planning"])
                     self.event_data["tasks"]["planning"] = {"status": "success"}
             for task in replace + remove:
                 if task == "venue":
-                    self.event_data["venue_replacement_pending"] = task in replace
-                    if before["venue"] and task in replace:
-                        self.event_data["rejected_venues"].append(before["venue"]["id"])
+                    self.event_data["workflow"]["venue_replacement_pending"] = task in replace
+                    if before["results"]["venue"] and task in replace:
+                        self.event_data["workflow"]["rejected_venues"].append(before["results"]["venue"]["id"])
                 self.invalidate(task, "Nouvelle proposition demandée." if task in replace else "Prestation supprimée.", remove=task in remove)
             invalidated = self.recheck_choices()
             invalidated.extend(self.reopen_changed_failures(failed))
-            return {"status": "updated", "revision": self.event_data["revision"], "invalidated": invalidated,
+            return {"status": "updated", "revision": self.event_data["workflow"]["revision"], "invalidated": invalidated,
                     "tasks": deepcopy(self.event_data["tasks"])}
         except (ValueError, TypeError, KeyError, TaskImpossible):
             self.event_data.clear()
@@ -992,7 +1071,7 @@ class EventRun:
             raise ValueError("Plafond du prestataire ambigu : préciser provider_filters.max_budget sans modifier budget_total.")
         scoped = deepcopy(requirements)
         ceiling = scoped.pop("budget_total")
-        filters = scoped.setdefault("provider_filters", {})
+        filters = scoped.setdefault("provider_constraints", {})
         if not isinstance(filters, dict) or filters.get("max_budget", ceiling) != ceiling:
             raise ValueError("Plafonds du prestataire contradictoires.")
         filters["max_budget"] = ceiling
@@ -1005,7 +1084,7 @@ class EventRun:
             return False
         if self.event_data["requirements"].get("document_kind"):
             return True
-        text = current + " " + tools._normalize(self.event_data["request"])
+        text = current + " " + tools._normalize(self.event_data["workflow"]["request"])
         return bool(re.search(r"\b(?:redige\w*|ecri\w*|prepar\w*|faire|fais)\b.{0,65}\b(?:" + document + r")\b", text))
 
     def supervisor_requirements(self, requirements, *, category=None):
@@ -1015,7 +1094,7 @@ class EventRun:
         if not isinstance(requirements, dict):
             raise ValueError("requirements doit être un objet JSON.")
         known = self.event_data["requirements"]
-        text = tools._normalize(self.turn_request + " " + self.event_data["request"])
+        text = tools._normalize(self.turn_request + " " + self.event_data["workflow"]["request"])
         requirements = deepcopy(requirements)
         legacy_venue = requirements.get("venue_filters")
         if category in (None, "venue") and isinstance(legacy_venue, dict):
@@ -1027,7 +1106,7 @@ class EventRun:
             return bool(clauses) and all(re.search(r"\b(?:preference|idealement|si possible)\b", clause) for clause in clauses)
         cleaned = {}
         for key, value in requirements.items():
-            if key.endswith("_filters"):
+            if key.endswith("_filters") or key == "assumptions":
                 continue  # Contrat historique accepté sans importer ses objets techniques.
             if key not in REQUIREMENT_PROPERTIES:
                 raise ValueError("Champ d'exigence inconnu : " + key)
@@ -1043,7 +1122,7 @@ class EventRun:
                            for token in re.findall(r"\b\d+(?:[ \u00a0\u202f]\d{3})*(?:[.,]\d+)?\b", text)}
                 if type(value) in (int, float) and value not in numbers:
                     continue
-            if key == "planning" and value == self.event_data["planning"]:
+            if key == "planning" and value == self.event_data["results"]["planning"]:
                 continue  # Une date proposée ne devient pas un horaire imposé par répétition.
             if key == "rental_period" and not re.search(r"\b(?:soiree?|journee)\b", text):
                 continue
@@ -1106,11 +1185,11 @@ class EventRun:
             context = {key: value for key, value in context.items() if key not in ("request", "current_request", "today")}
             if task in CATALOGS:
                 context["budget_total"] = self.event_data["requirements"].get("budget_total")
-                context["persistent_filters"] = self.event_data["requirements"].get(task + "_filters", {})
+                context["persistent_filters"] = self.event_data["requirements"].get(task + "_constraints", {})
             if task == "venue":
                 context["location_scope"] = self.event_data["requirements"].get("location_scope")
                 context["services"] = {category: {"filters": self.context(category)["filters"],
-                                                   "selection": self.event_data["providers" if category == "provider" else category]}
+                                                   "selection": self.event_data["results"]["providers" if category == "provider" else category]}
                                        for category in ("catering", "provider") if category in self.event_data["tasks"]}
             contexts[task] = deepcopy(context)
         return contexts
@@ -1135,7 +1214,7 @@ class EventRun:
         if category == "venue":
             details.update({key: row[key] for key in ("prix", "equipements", "contraintes")})
         else:
-            selection = self.event_data["catering"] if category == "catering" else self.event_data["providers"][0]
+            selection = self.event_data["results"]["catering"] if category == "catering" else self.event_data["results"]["providers"][0]
             offer_key, field = ("formula_id", "formules") if category == "catering" else ("kit_id", "kits")
             details["offer"] = next(offer for offer in row[field] if offer["id"] == selection[offer_key])
             for key in ("frais_supplementaires", "deplacement", "boissons", "reservation"):
@@ -1145,38 +1224,35 @@ class EventRun:
 
     def settled(self):
         tasks = self.event_data["tasks"]
-        return bool(tasks) and all(value["status"] != "pending" for value in tasks.values())
+        return bool(tasks) and all(value["status"] not in PENDING for value in tasks.values())
 
     def complete(self):
         if self.interactive:
-            return bool(self.event_data["pending_input"]) or (self.scope_declared and self.settled())
+            return bool(self.event_data["workflow"]["pending_input"]) or (self.scope_declared and self.settled())
         # Sans liste annoncée, le Supervisor reste libre de déléguer une autre tâche.
-        return self.plan_refused() or ((self.scope_declared or self.event_data["plan_approval"] is not None)
+        return self.plan_refused() or ((self.scope_declared or self.event_data["workflow"]["plan_approval"] is not None)
                                        and self.settled())
 
     def plan_refused(self):
-        approval = self.event_data["plan_approval"]
+        approval = self.event_data["workflow"]["plan_approval"]
         return approval is not None and approval["approved"] is False
 
     def approve_plan(self):
         """Présenter le bilan Python avant Writer ; l'accord porte sur ce plan précis."""
-        plan = self.consolidated()
-        for field in ("plan_approval", "documents", "pending_input", "document_archive", "decision_archive", "approval_archive"):
-            plan.pop(field)
-        plan["tasks"].pop("documents", None)
-        previous = self.event_data["plan_approval"]
+        plan = deepcopy(compact_plan(self.event_data, self.event_data["workflow"]["revision"]))
+        previous = self.event_data["workflow"]["plan_approval"]
         if previous and previous["plan"] == plan:
             return previous["approved"]
-        self.event_data["plan_approval"] = None
+        self.event_data["workflow"]["plan_approval"] = None
         content = ("Plan global proposé avant rédaction des emails\n\n"
                    + self.summary("Plan à valider avant rédaction des emails.")
                    + "\n\nApprouvez-vous ce plan global et autorisez-vous la génération des brouillons d'emails ?")
         if self.interactive:
-            self.event_data["pending_input"] = {"kind": "plan_approval", "content": content, "plan": plan,
-                                                "revision": self.event_data["revision"]}
+            self.event_data["workflow"]["pending_input"] = {"kind": "plan_approval", "content": content, "plan": plan,
+                                                "revision": self.event_data["workflow"]["revision"]}
             return None
         approved = tools.ask_user(content)["approved"]
-        self.event_data["plan_approval"] = {"content": content, "plan": plan, "approved": approved}
+        self.event_data["workflow"]["plan_approval"] = {"content": content, "plan": plan, "approved": approved}
         return approved
 
     def validate_final(self, text):
@@ -1230,32 +1306,22 @@ class EventRun:
                 "details": details, "deposit": deposit, "known_ttc_subtotal": amount(subtotal),
                 "known_cash_required": amount(subtotal + money(deposit)), "missing": missing,
                 "known_over_budget": req.get("budget_total") is not None and subtotal > money(req["budget_total"]),
-                "allocations": ({key: amount(money(req["budget_total"]) * money(value)) for key, value in self.event_data["budget"].items()}
-                                if req.get("budget_total") is not None and self.event_data["budget"] else None),
+                "allocations": ({key: amount(money(req["budget_total"]) * money(value)) for key, value in self.event_data["results"]["budget"].items()}
+                                if req.get("budget_total") is not None and self.event_data["results"]["budget"] else None),
                 "warning": "Coût total non confirmé : HT/TTC distincts, TVA prestataire, déplacements, boissons et personnel éventuels à chiffrer. Caution hors dépense."}
-
-    def consolidated(self):
-        data = deepcopy(self.event_data)
-        data.pop("request")
-        for category in CATALOGS:
-            data[category] = self.selection_details(category)
-        data.pop("providers")
-        data["availability"] = "Disponibilités non vérifiées ; aucune réservation confirmée."
-        data["costs"] = self.costs()
-        return data
 
     def summary(self, reason):
         lines = ["Résultat " + ("consolidé." if self.successful() else "partiel. " + reason)]
-        approval = self.event_data["plan_approval"]
+        approval = self.event_data["workflow"]["plan_approval"]
         if approval:
             lines.append("Plan global approuvé." if approval["approved"] else
                          "Plan global refusé ; génération des emails arrêtée.")
-        location = self.event_data["location_search"]
+        location = self.event_data["workflow"]["location_search"]
         if location:
             lines.append(f"Aucune salle compatible à {location['requested_city']} avec les critères recherchés ; "
                          f"recherche élargie à la province de {location['province']}. " + location["basis"])
-        if self.event_data["planning"]:
-            planning = self.event_data["planning"]
+        if self.event_data["results"]["planning"]:
+            planning = self.event_data["results"]["planning"]
             start, end = (datetime.fromisoformat(planning[key]).strftime("%d/%m/%Y à %H:%M") for key in ("start", "end"))
             lines.append(f"Date proposée : du {start} au {end} (heure locale).")
         for category, label in (("venue", "Salle"), ("catering", "Traiteur"), ("provider", "Prestataire")):
@@ -1270,7 +1336,7 @@ class EventRun:
                     lines.append(f"  {name} : {offer.get('description', '').rstrip('.')}.")
         costs = self.costs()
         lines.extend(financial_lines(costs))
-        for observation in self.event_data["weather"]:
+        for observation in self.event_data["results"]["weather"]:
             label = f"Météo consultée — {observation['city']}, {observation['date']} ({observation['source']}) : "
             if observation["status"] == "available":
                 forecast = observation["forecast"]
@@ -1284,20 +1350,17 @@ class EventRun:
         for task, outcome in self.event_data["tasks"].items():
             if outcome["status"] not in ("success", "skipped"):
                 unresolved = outcome.get("error", "tâche non terminée")
-                if (task == "documents" and outcome["status"] == "pending"
+                if (task == "documents" and outcome["status"] in PENDING
                         and self.event_data["requirements"].get("document_kind") == "email"
-                        and "venue" in self.event_data["tasks"] and not self.event_data["venue"]):
+                        and "venue" in self.event_data["tasks"] and not self.event_data["results"]["venue"]):
                     unresolved = "Email en attente : aucune salle sélectionnée ; destinataire inconnu"
                 lines.append(f"Non résolu — {labels.get(task, task)} : {unresolved.rstrip('.')}.")
-        for document in self.event_data["documents"]:
+        for document in self.event_data["results"]["documents"]:
             label = ("Brouillon approuvé" if document.get("approved") is True else
                      "Brouillon refusé" if document.get("approved") is False else "Document")
             lines.append(label + " :\n" + document["content"])
-        if self.event_data["document_archive"]:
+        if self.event_data["workflow"]["document_archive"]:
             lines.append("Des brouillons de versions antérieures sont archivés ; leurs accords ne valent pas pour le plan actuel.")
-        assumptions = self.event_data["requirements"].get("assumptions")
-        if assumptions:
-            lines.append("Hypothèses : " + assumptions)
         venue = self.selected_row("venue")
         if venue:
             constraints = venue["contraintes"]
@@ -1311,14 +1374,14 @@ class EventRun:
                     names = {row["id"]: row["nom"] for row in catalog} if isinstance(catalog, list) else {}
                     allowed = [names.get(identifier, f"référence {identifier} à vérifier") for identifier in constraints[ids_key]]
                     lines.append(label + " : " + (", ".join(allowed) or "aucun — contrainte non résolue") + ".")
-        elif self.event_data["catering"] or self.event_data["providers"]:
+        elif self.event_data["results"]["catering"] or self.event_data["results"]["providers"]:
             lines.append("Compatibilité du traiteur et des prestataires avec la future salle à confirmer.")
         lines.append("Disponibilités non vérifiées ; aucune réservation confirmée. Aucun email envoyé.")
         return "\n".join(lines)
 
     def turn_summary(self, reason):
-        if self.event_data["pending_input"]:
-            return self.event_data["pending_input"]["content"]
+        if self.event_data["workflow"]["pending_input"]:
+            return self.event_data["workflow"]["pending_input"]["content"]
         if self.direct_reply is not None and not self.turn_actions:
             return self.direct_reply
         return self.summary(reason)
@@ -1326,35 +1389,35 @@ class EventRun:
     def clarify(self, question):
         if not isinstance(question, str) or not question.strip():
             raise ValueError("Une question non vide est attendue.")
-        if self.event_data["pending_input"]:
+        if self.event_data["workflow"]["pending_input"]:
             return {"status": "waiting", "reason": "Une réponse est déjà attendue."}
-        self.event_data["pending_input"] = {"kind": "clarification", "content": question}
+        self.event_data["workflow"]["pending_input"] = {"kind": "clarification", "content": question}
         return {"status": "waiting"}
 
     def resolve_pending(self, text):
         """Oui/non valide des données exactes, sans modèle ; les autres messages restent au Supervisor."""
-        pending = self.event_data["pending_input"]
+        pending = self.event_data["workflow"]["pending_input"]
         if not pending:
             return False
         if pending["kind"] == "clarification":
             self.answered_question = pending["content"]
-            self.event_data["pending_input"] = None
+            self.event_data["workflow"]["pending_input"] = None
             return False
         answer = text.strip().casefold().rstrip(".! ")
         if answer not in ("oui", "o", "yes", "y", "non", "n", "no"):
             return False
-        if pending["revision"] != self.event_data["revision"]:
+        if pending["revision"] != self.event_data["workflow"]["revision"]:
             raise ValueError("Cette validation appartient à une ancienne version du plan.")
         approved = answer in ("oui", "o", "yes", "y")
-        self.event_data["pending_input"] = None
+        self.event_data["workflow"]["pending_input"] = None
         self.turn_actions = True
         if pending["kind"] == "email_approval":
             self.record("documents", {"status": "success" if approved else "refused",
                 **({"error": "Brouillon refusé ; aucun envoi."} if not approved else {}),
                 "result": {"content": pending["content"], "approved": approved, "revision": pending["revision"]}})
         else:
-            self.event_data["plan_approval"] = {key: pending[key] for key in ("content", "plan", "revision")}
-            self.event_data["plan_approval"]["approved"] = approved
+            self.event_data["workflow"]["plan_approval"] = {key: pending[key] for key in ("content", "plan", "revision")}
+            self.event_data["workflow"]["plan_approval"]["approved"] = approved
             if approved:
                 self.event_data["tasks"]["documents"] = {"status": "pending"}
                 self.resume_writer = pending["resume"]
@@ -1363,17 +1426,27 @@ class EventRun:
         return True
 
     def conversation_context(self, messages):
-        """Quelques échanges utiles et décisions courantes, jamais les historiques ReAct."""
-        approval = self.event_data["plan_approval"]
-        return {"initial_request": self.event_data["request"][:4000], "current_request": self.turn_request,
-                "requirements": self.event_data["requirements"], "planning": self.event_data["planning"],
-                "budget": self.event_data["budget"],
-                "decisions": {category: self.selection_details(category) for category in CATALOGS},
-                "costs": self.costs(), "tasks": self.event_data["tasks"],
-                "pending_input": self.event_data["pending_input"],
+        """État courant, sans réinjecter les bilans, brouillons ou historiques ReAct."""
+        approval = self.event_data["workflow"]["plan_approval"]
+        pending = self.event_data["workflow"]["pending_input"]
+        costs = self.costs()
+        context = {"current_request": self.turn_request,
+                "requirements": self.event_data["requirements"], "planning": self.event_data["results"]["planning"],
+                "budget": self.event_data["results"]["budget"],
+                "decisions": {category: {**(self.event_data["results"]["providers"][0] if category == "provider"
+                                          else self.event_data["results"][category]), "name": self.selected_row(category)["nom"]}
+                              for category in CATALOGS if self.selected_row(category)},
+                "costs": {key: value for key, value in costs.items() if key != "details"},
+                "tasks": self.event_data["tasks"],
+                "pending_input": {"kind": pending["kind"]} if pending else None,
                 "answered_question": self.answered_question,
                 "plan_approved": approval.get("approved") if approval else None,
                 "documents": [{"approved": doc.get("approved"), "revision": doc.get("revision", 0)}
-                              for doc in self.event_data["documents"]],
-                "recent_messages": [{"role": item["role"], "content": item["content"][:1200]}
-                                    for item in (messages or [])[-4:]]}
+                              for doc in self.event_data["results"]["documents"]]}
+        if self.answered_question:
+            context["initial_request"] = self.event_data["workflow"]["request"]
+        # Les questions détaillées peuvent demander les fiches actuelles ; jamais les anciens prompts.
+        if re.search(r"\b(?:detail|prix|cout|comprend|equipement|formule|kit|contrainte)\w*\b", tools._normalize(self.turn_request)):
+            context["details"] = {category: self.selection_details(category) for category in CATALOGS if self.selected_row(category)}
+            context["costs"] = costs
+        return context

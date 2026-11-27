@@ -39,7 +39,8 @@ def _run_turn(conversation, request, directory, orchestrator_factory):
     save_conversation(conversation, directory)  # conserver la demande avant tout appel LLM
     orchestrator = None
     try:
-        pending = conversation["event_data"].get("pending_input") or {}
+        state = conversation["event_data"]
+        pending = state.get("workflow", state).get("pending_input") or {}
         answer = request.strip().casefold().rstrip(".! ")
         python_only = (pending.get("kind") == "email_approval" and answer in ("oui", "o", "yes", "y", "non", "n", "no")
                        or pending.get("kind") == "plan_approval" and answer in ("non", "n", "no"))
@@ -49,10 +50,11 @@ def _run_turn(conversation, request, directory, orchestrator_factory):
         if not isinstance(response, str) or not response.strip():
             raise ValueError("Réponse finale absente.")
         data = orchestrator.event_data
-        refused = ((data.get("plan_approval") or {}).get("approved") is False
-                   or any(item.get("approved") is False for item in data.get("documents", []))
+        workflow = data.get("workflow", data)
+        refused = ((workflow.get("plan_approval") or {}).get("approved") is False
+                   or any(item.get("approved") is False for item in data.get("results", data).get("documents", []))
                    or any(item.get("status") == "refused" for item in data.get("tasks", {}).values()))
-        conversation["status"] = ("waiting" if data.get("pending_input") else "refused" if refused else
+        conversation["status"] = ("waiting" if workflow.get("pending_input") else "refused" if refused else
                                   {"success": "completed", "partial": "partial"}.get(orchestrator.last_status, "error"))
     except (KeyboardInterrupt, EOFError):
         conversation["status"] = "interrupted"
