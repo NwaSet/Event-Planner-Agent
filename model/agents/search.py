@@ -155,6 +155,14 @@ def search_candidates(category, filters=None, *, catalogs=None, context=None, ac
         cleaned, problem = tools._validate_filters(filters, schema)
         if problem:
             return {"status": "invalid_filters", "error": problem, "candidates": []}
+        venue = (context or {}).get("venue")
+        if category in ("catering", "provider") and venue:
+            cleaned["city"] = venue["lieux"]["commune"]
+            if category == "catering":
+                cleaned["province"] = venue["lieux"]["province"]
+            else:
+                cleaned.pop("province", None)
+        matching_filters = {key: value for key, value in cleaned.items() if key != "city"}
         problem = event_type_error(cleaned.get("event_type"), (context or {}).get("request", ""))
         if problem:
             return {"status": "invalid_filters", "error": problem, "candidates": []}
@@ -165,7 +173,7 @@ def search_candidates(category, filters=None, *, catalogs=None, context=None, ac
             return {"status": "no_match", "error": "Aucun identifiant autorisé.", "candidates": []}
         candidates = []
         for row in rows:
-            if not matches(row, cleaned) or not compatible(category, row, context or {}):
+            if not matches(row, matching_filters) or not compatible(category, row, context or {}):
                 continue
             if accept is not None and not accept(row):
                 continue
@@ -177,20 +185,26 @@ def search_candidates(category, filters=None, *, catalogs=None, context=None, ac
             if offers_key:
                 candidate = dict(row)
                 candidate[offers_key] = [offer for offer in row[offers_key]
-                                        if matches({**row, offers_key: [offer]}, cleaned)
+                                        if matches({**row, offers_key: [offer]}, matching_filters)
                                         and fits_budget(category, row, offer, cleaned, financial)]
                 if not candidate[offers_key]:
                     continue
             candidates.append(project(category, candidate))
+        location = None
+        if not (context or {}).get("skip_proximity") or (context or {}).get("location_scope") == "city":
+            candidates, location = tools.nearest_candidates(
+                filename, candidates, cleaned.get("city"),
+                strict=category == "venue" and (context or {}).get("location_scope") == "city")
         # Sous-ensemble explicite : le modèle peut préciser ses critères pour explorer davantage.
         limit = min(cleaned.get("limit") or 5, 10)
         return {"status": "matched" if candidates else "no_match",
                 "total": len(candidates), "shown": min(limit, len(candidates)),
                 "filters": cleaned,
+                **({"location_search": location} if location else {}),
                 "candidates": candidates[:limit], "availability": "non vérifiée",
-                **({"truncated": len(candidates) > limit, "order": "catalogue, sans classement qualitatif"} if candidates else {}),
+                **({"truncated": len(candidates) > limit, "order": "commune compatible la plus proche, sans classement qualitatif"} if candidates else {}),
                 **({"error": "Aucune offre ne respecte toutes les contraintes."} if not candidates else {})}
-    except (ValueError, TypeError, KeyError, AttributeError) as error:
+    except (ValueError, TypeError, KeyError, AttributeError, RuntimeError) as error:
         return {"status": "error", "error": f"Recherche impossible : {error}", "candidates": []}
 
 
@@ -202,6 +216,7 @@ def compact_tool(category):
     schema = deepcopy(CATALOGS[category][2])
     schema["function"]["description"] = (
         "Recherche compacte avec statut matched/no_match/invalid_filters/error. "
+        "Commune compatible la plus proche à vol d'oiseau ; services centrés sur la salle retenue. "
         "Aucun repli intégral. Offres compatibles seulement ; disponibilité non vérifiée.")
     schema["function"]["parameters"]["properties"]["limit"]["description"] = "Candidats affichés, entre 1 et 10."
     return search, schema

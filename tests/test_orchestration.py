@@ -197,7 +197,7 @@ def test_no_weather_call_or_summary_when_planning_does_not_need_it(monkeypatch):
 
 
 @pytest.mark.parametrize("location", ["Uniquement à Namur", "Obligatoirement dans la commune de Namur",
-                                      "Pas en dehors de Namur", "À Namur", "Autour de Namur, mais uniquement à Namur"])
+                                      "Pas en dehors de Namur", "Autour de Namur, mais uniquement à Namur"])
 def test_strict_city_never_expands_even_when_province_has_candidates(monkeypatch, location):
     run = EventRun("Soirée étudiante. " + location)
     run.remember({"city": "Namur", "guests": 120, "planning": STUDENT_PLANNING}, ["venue"])
@@ -216,7 +216,8 @@ def test_soft_city_expands_to_same_province_and_preserves_actual_commune(monkeyp
 
     def choose(messages, **kwargs):
         payload = json.loads(messages[1]["content"])
-        assert "city" not in payload["filters"] and payload["filters"]["province"] == "Namur"
+        assert payload["filters"]["city"] == "Namur"
+        assert payload["location_search"]["selected_city"] == "Dinant"
         assert payload["location_search"]["requested_city"] == "Namur"
         assert all(row["lieux"]["commune"] == "Dinant" for row in payload["search"]["candidates"])
         assert payload["filters"]["event_type"] == "soiree_etudiante" and payload["filters"]["guests"] == 120
@@ -228,10 +229,10 @@ def test_soft_city_expands_to_same_province_and_preserves_actual_commune(monkeyp
     assert run.event_data["results"]["venue"] == {"id": "salle_109"}
     assert run.event_data["requirements"]["city"] == "Namur"  # demande originale conservée
     run.remember({"preferences": "Bon son"})  # les vérifications ultérieures acceptent la salle de la zone étendue
-    assert run.context("venue")["filters"]["province"] == "Namur"
+    assert run.context("venue")["filters"]["city"] == "Namur"
     output = run.summary("")
-    assert "recherche élargie à la province de Namur" in output
-    assert "Halle des Hautes Lumières — Dinant" in output and "proximité et temps de trajet non établis" in output
+    assert "recherche rapprochée de Dinant" in output
+    assert "Halle des Hautes Lumières — Dinant" in output and "Distance à vol d'oiseau" in output
     chat.assert_called_once()
 
 
@@ -256,13 +257,13 @@ def test_expansion_cannot_bypass_capacity_ids_budget_space_or_hours(monkeypatch,
     _, _, _, decision = create_all_agents()
     assert run.delegate(decision, "Salle", "venue")["status"] == "no_match"
     assert run.event_data["results"]["venue"] is None
-    assert run.event_data["workflow"]["location_search"]["province"] == "Namur"
+    assert run.event_data["workflow"]["location_search"] is None
     agent_module.chat.assert_not_called()
 
 
 def test_expansion_still_respects_selected_provider_exclusivity(monkeypatch):
     run = EventRun("Soirée étudiante autour de Namur")
-    run.remember({"guests": 120, "planning": STUDENT_PLANNING}, ["venue", "provider"])
+    run.remember({"guests": 120, "planning": STUDENT_PLANNING, "province": "Namur"}, ["venue", "provider"])
     run.record("provider", {"status": "success", "result": {"id": "002", "kit_id": 1}})
     _, _, _, decision = create_all_agents()
     assert run.delegate(decision, "Salle", "venue")["status"] == "no_match"
@@ -272,7 +273,7 @@ def test_expansion_still_respects_selected_provider_exclusivity(monkeypatch):
 
 def test_expansion_cannot_be_redirected_to_another_province_by_tool(monkeypatch):
     run = EventRun("Soirée étudiante autour de Namur")
-    run.remember({"guests": 120, "planning": STUDENT_PLANNING}, ["venue"])
+    run.remember({"guests": 120, "planning": STUDENT_PLANNING, "province": "Namur"}, ["venue"])
     _, _, _, decision = create_all_agents()
 
     def fake(messages, **kwargs):
@@ -288,7 +289,7 @@ def test_expansion_cannot_be_redirected_to_another_province_by_tool(monkeypatch)
 
 
 def test_unknown_soft_city_does_not_fall_back_to_entire_country(monkeypatch):
-    run = prepared({"city": "Ville inconnue", "location_scope": "province_fallback"})
+    run = prepared({"city": "Ville inconnue", "location_scope": "city"})
     _, _, _, decision = create_all_agents()
     assert run.delegate(decision, "Salle", "venue")["status"] == "no_match"
     assert run.event_data["workflow"]["location_search"] is None
@@ -318,7 +319,7 @@ def test_real_student_request_integration_with_structural_fix_weather_finance_an
         if agent == "decision making agent":
             payload = json.loads(messages[1]["content"])
             if payload["task"] == "venue":
-                assert payload["location_search"]["province"] == "Namur"
+                assert payload["location_search"]["selected_city"] == "Dinant"
                 assert "weather" not in payload  # Namur n'est pas la météo de Dinant
             elif not compatible_venue:
                 if len(messages) == 2:
@@ -331,7 +332,7 @@ def test_real_student_request_integration_with_structural_fix_weather_finance_an
             tasks = ["planning", "venue", "provider"]
             return message(None, call("planning_agent", demande="Date et météo", tasks=tasks, requirements={
                 "city": "Namur", "event_type": "soiree_etudiante", "guests": 120, "budget_total": None,
-                "rental_period": "soiree", "music_required": True, "tasks": tasks}))
+                "rental_period": "soiree", "music_required": True, "province": "Namur", "tasks": tasks}))
         if turn == 2:
             return message(None, call("decision_making_agent", category="venue", demande="Salle"))
         if turn == 3:
@@ -344,22 +345,22 @@ def test_real_student_request_integration_with_structural_fix_weather_finance_an
     output = supervisor.run(STUDENT_REQUEST)
     assert supervisor.last_status == ("success" if compatible_venue else "partial")
     assert supervisor.event_data["results"]["planning"] == STUDENT_PLANNING
-    assert supervisor.counters["llm_calls"] == 7  # Un no_match ne provoque plus un dernier appel Supervisor inutile.
-    assert supervisor.counters["delegations"] == (3 if compatible_venue else 2)
+    assert supervisor.counters["llm_calls"] == (7 if compatible_venue else 6)
+    assert supervisor.counters["delegations"] == (3 if compatible_venue else 1)
     assert get.call_count == 2 and len(supervisor.event_data["results"]["weather"]) == 1
     assert "05/12/2026 à 22:00" in output and "06/12/2026 à 04:00" in output
     assert "Météo consultée — Namur, 2026-12-05" in output
-    assert "Coût TTC total : non déterminable" in output
-    assert "TVA du prestataire inconnue" in output
     if compatible_venue:
+        assert "Coût TTC total : non déterminable" in output
+        assert "TVA du prestataire inconnue" in output
         assert supervisor.event_data["results"]["venue"] == {"id": "salle_109"}
         assert supervisor.event_data["results"]["providers"][0]["id"] in ("010", "012")
         assert "— Dinant" in output and "(partiel)" in output
     else:
         assert supervisor.event_data["results"]["venue"] is None
-        assert supervisor.event_data["results"]["providers"] == [{"id": "002", "kit_id": 6}]
-        assert "B-Sound Events" in output and "3 000,00 EUR HT" in output
-        assert "Aucun sous-total TTC calculable" in output
+        assert supervisor.event_data["results"]["providers"] == []
+        assert supervisor.event_data["tasks"]["provider"]["status"] == "blocked"
+        assert "emplacement des services indéterminé" in output
         assert "Somme connue à mobiliser" not in output and ": 0,00 EUR" not in output
 
 
@@ -482,13 +483,13 @@ def test_namur_all_seven_venues_forbid_student_parties():
     assert all_namur["total"] == 7 and limited["shown"] == 5 and limited["truncated"]
     assert [row["id"] for row in all_namur["candidates"][5:]] == ["salle_120", "salle_142"]
     assert all("soiree_etudiante" in row["types_evenements_interdits"] for row in all_namur["candidates"])
-    filtered = search_candidates("venue", {"city": "Namur", "event_type": "soiree_etudiante"})
+    filtered = search_candidates("venue", {"city": "Namur", "event_type": "soiree_etudiante"}, context={"location_scope": "city"})
     assert filtered["status"] == "no_match" and filtered["total"] == 0 and filtered["candidates"] == []
     assert filtered["filters"]["event_type"] == "soiree_etudiante"
 
 
 def test_student_party_requirement_reaches_search_even_if_supervisor_only_passes_city(monkeypatch):
-    run = EventRun("Organise une soirée étudiante à Namur.")
+    run = EventRun("Organise une soirée étudiante uniquement à Namur.")
     _, _, _, decision = create_all_agents()
     result = run.delegate(decision, "Salle", "venue", requirements={"city": "Namur", "preferences": {"ambiance": "luxe"}})
     assert result["status"] == "no_match" and "soirée étudiante" in result["error"]
@@ -576,7 +577,7 @@ def test_repaired_first_task_is_not_stopped_before_supervisor_can_correct_it(mon
     assert supervisor.event_data["results"]["planning"] == PLANNING
 
 
-def test_student_namur_partial_final_contains_independent_supplier_results(monkeypatch):
+def test_services_wait_when_strict_venue_search_fails(monkeypatch):
     turns, observed = [], []
 
     def fake(messages, tools=None, agent=None):
@@ -602,17 +603,13 @@ def test_student_namur_partial_final_contains_independent_supplier_results(monke
 
     monkeypatch.setattr(agent_module, "chat", fake)
     supervisor = create_orchestrator()
-    response = supervisor.run("Organise une soirée étudiante à Namur sans limite de budget. Date, salle, traiteur et prestataire.")
+    response = supervisor.run("Organise une soirée étudiante uniquement à Namur sans limite de budget. Date, salle, traiteur et prestataire.")
     data = supervisor.event_data
     assert supervisor.last_status == "partial" and data["results"]["planning"] is None and data["results"]["venue"] is None
-    assert data["results"]["catering"] and data["results"]["providers"]
-    assert set(observed) == {"catering", "provider"}
-    assert all(data["tasks"][task]["status"] == "success" for task in ("catering", "provider"))
-    assert all(text in response for text in ("Traiteur :", "Prestataire :", "Non résolu — planning", "Non résolu — salle", "soirée étudiante"))
-    catalogs = load_catalogs()
-    for category, selection in (("catering", data["results"]["catering"]), ("provider", data["results"]["providers"][0])):
-        assert next(row["nom"] for row in catalogs[category] if row["id"] == selection["id"]) in response
-    assert "future salle à confirmer" in response and "{" not in response
+    assert data["results"]["catering"] is None and data["results"]["providers"] == []
+    assert observed == []
+    assert all(data["tasks"][task]["status"] == "blocked" for task in ("catering", "provider"))
+    assert all(text in response for text in ("Non résolu — planning", "Non résolu — salle", "soirée étudiante"))
 
 
 def test_a_direct_planning_without_requirements_or_task_list(monkeypatch):
@@ -756,11 +753,11 @@ def test_late_planning_respects_existing_venue_and_repairs_once(monkeypatch):
     assert run.event_data["results"]["planning"] == PLANNING
 
 
-def test_late_venue_preserves_previously_selected_provider(monkeypatch):
+def test_provider_waits_for_venue_before_selecting_compatible_supplier(monkeypatch):
     run = prepared({"provider_filters": {"ids": ["005"]}}, ["provider", "venue"])
     _, _, _, decision = create_all_agents()
     monkeypatch.setattr(agent_module, "chat", select_first)
-    assert run.delegate(decision, "Prestataire d'abord", "provider")["status"] == "success"
+    assert run.delegate(decision, "Prestataire d'abord", "provider")["requires"] == "venue"
     first = copy.deepcopy(run.catalogs["venue"][0])
     second = copy.deepcopy(first)
     second["id"] = "compatible"
@@ -959,7 +956,7 @@ def test_simultaneous_constraints_and_no_relaxation(monkeypatch):
 
 
 def test_no_match_is_terminal_and_never_exposes_fallback(monkeypatch):
-    run = prepared({"city": "Ville impossible"})
+    run = prepared({"city": "Ville impossible", "location_scope": "city"})
     _, _, _, decision = create_all_agents()
     chat = Mock()
     monkeypatch.setattr(agent_module, "chat", chat)
@@ -968,7 +965,7 @@ def test_no_match_is_terminal_and_never_exposes_fallback(monkeypatch):
     chat.assert_not_called()
     assert run.complete() and not run.successful()
     assert "Aucune salle" in run.summary("Conflit")
-    assert len(tools.get_venues(city="Ville impossible", limit=1)) == 150
+    assert tools.get_venues(city="Ville impossible", limit=1)["code"] == "geography_unavailable"
 
 
 @pytest.mark.parametrize("category,filters", [

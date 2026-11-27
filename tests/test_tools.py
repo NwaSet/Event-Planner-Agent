@@ -32,9 +32,9 @@ def test_real_catalog_fallback_and_preservation(function, filename, key, count):
     rows = read_rows(filename, key)
     assert len(rows) == count
     for filters in ({}, {"limit": 1}, {"city": "   ", "ids": []},
-                    {"city": "Ville inexistante", "limit": 1},
                     {"city": None, "limit": None}):
         assert function(**filters) == rows
+    assert function(city="Ville inexistante", limit=1)["code"] == "geography_unavailable"
     assert function(ids=[rows[0]["id"]]) == [rows[0]]
     assert (tools.DATA_DIR / filename).read_bytes() == original_bytes
 

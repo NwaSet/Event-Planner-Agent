@@ -16,8 +16,8 @@ PENDING = ("pending", "invalidated")
 TASKS = ("planning", "budget", "venue", "catering", "provider", "documents")
 REQUIREMENT_PROPERTIES = {
     "city": {"type": "string"}, "province": {"type": "string"},
-    "location_scope": {"type": "string", "enum": ["city", "province_fallback"],
-                       "description": "city par défaut/ville imposée ; province_fallback seulement pour une localisation explicitement souple, ville d'abord puis même province faute de données de voisinage."},
+    "location_scope": {"type": "string", "enum": ["city", "nearest", "province_fallback"],
+                       "description": "nearest par défaut : commune compatible la plus proche ; city seulement pour une commune strictement imposée ; province_fallback limite aux villes de la même province."},
     "event_type": {"type": "string", "description": "Catégorie précise du catalogue seulement."},
     "guests": {"type": "integer", "minimum": 1},
     "budget_total": {"type": ["number", "null"], "minimum": 0},
@@ -186,7 +186,7 @@ class EventRun:
             soft = re.search(r"\b(?:dans le coin de |autour de |pres de |dans les environs de )" + name, wording)
             negated = re.search(r"\b(?:pas |sans )(?:dans le coin de |autour de |pres de |dans les environs de )" + name, wording)
             if strict or (soft and not negated):
-                locations.append((city, "city" if strict else "province_fallback"))
+                locations.append((city, "city" if strict else "nearest"))
         if len(locations) == 1 and ("city" not in req or req["city"] == locations[0][0]):
             req["city"], req["location_scope"] = locations[0]
         headcounts = re.findall(r"\b(?:pour|de)\s+(\d+)\s+(?:personnes|invites|participants|convives)\b", wording)
@@ -340,6 +340,7 @@ class EventRun:
             if not row:
                 continue
             context = self.context(category)
+            context["skip_proximity"] = True
             if "ids" in context["filters"] and row["id"] not in context["filters"]["ids"]:
                 raise ValueError(f"Identifiant {category} déjà choisi incompatible avec la nouvelle contrainte.")
             found = search_candidates(category, {**context["filters"], "ids": [row["id"]]},
@@ -427,25 +428,32 @@ class EventRun:
             if req.get("rental_period"):
                 filters.setdefault("rental_period", req["rental_period"])
             for field in ("city", "province"):
-                if field == "city" and self.event_data["workflow"]["location_search"] and self.event_data["workflow"]["location_search"]["expanded"]:
-                    continue  # La ville souhaitée reste dans requirements ; les filtres effectifs sont provinciaux.
                 if field in req:
                     if field in filters and tools._normalize(filters[field]) != tools._normalize(req[field]):
                         raise ValueError(f"Lieu contradictoire : {field}.")
                     filters[field] = req[field]
-            if self.event_data["workflow"]["location_search"] and self.event_data["workflow"]["location_search"]["expanded"]:
-                filters.setdefault("province", self.event_data["workflow"]["location_search"]["province"])
-        venue = self.selected_row("venue")
-        if task == "catering" and not venue:
-            province = req.get("province")
-            if not province and req.get("city") and isinstance(self.catalogs["venue"], list):
+            if req.get("location_scope") == "province_fallback" and "province" not in filters:
                 provinces = {row["lieux"]["province"] for row in self.catalogs["venue"]
-                             if tools._normalize(row["lieux"]["commune"]) == tools._normalize(req["city"])}
+                             if tools._normalize(row["lieux"]["commune"]) == tools._normalize(req.get("city", ""))}
                 if len(provinces) == 1:
-                    province = provinces.pop()
-            if province:
-                # La commune du traiteur reste un filtre de siège, distinct de sa zone d'intervention.
-                filters.setdefault("province", province)
+                    filters["province"] = provinces.pop()
+                else:
+                    raise ValueError("Province de la ville inconnue : précisez province ou utilisez location_scope=nearest.")
+        venue = self.selected_row("venue")
+        if task in ("catering", "provider"):
+            if venue:
+                filters["city"] = venue["lieux"]["commune"]
+                if task == "catering":
+                    filters["province"] = venue["lieux"]["province"]
+                else:
+                    filters.pop("province", None)
+            elif req.get("city"):
+                filters.setdefault("city", req["city"])
+                if task == "catering":
+                    provinces = {row["lieux"]["province"] for row in self.catalogs["venue"]
+                                 if tools._normalize(row["lieux"]["commune"]) == tools._normalize(req["city"])}
+                    if req.get("province") or len(provinces) == 1:
+                        filters.setdefault("province", req.get("province") or provinces.pop())
         total = req.get("budget_total")
         if total is not None and self.event_data["results"]["budget"]:
             allocated = round(total * self.event_data["results"]["budget"][task], 2)
@@ -457,6 +465,7 @@ class EventRun:
                 "request": self.turn_request if self.interactive else self.event_data["workflow"]["request"],
                 "current_request": self.turn_request,
                 "venue": venue if task != "venue" else None, "today": self.today,
+                "location_scope": req.get("location_scope", "nearest") if task == "venue" else "nearest",
                 "music_required": req.get("music_required", True), "music_end": req.get("music_end"),
                 "space_type": req.get("venue_constraints", {}).get("space_type"),
                 "preferences": req.get("preferences", "")}
@@ -471,8 +480,9 @@ class EventRun:
             context["previous_planning"] = previous
         venue = self.selected_row("venue")
         if venue:
+            context["requirements"]["city"] = venue["lieux"]["commune"]
             context["venue_constraints"] = {"heure_fin_musique": venue["contraintes"]["heure_fin_musique"]}
-        weather = self.relevant_weather(req.get("city"))
+        weather = self.relevant_weather(context["requirements"].get("city"))
         if weather:
             context["weather"] = weather
         return context
@@ -506,7 +516,8 @@ class EventRun:
         req = self.event_data["requirements"]
         approval = self.event_data["workflow"]["plan_approval"]
         return {"document_kind": req.get("document_kind", "synthesis"),
-                "requirements": {key: req[key] for key in ("city", "event_type", "guests", "preferences") if key in req},
+                "requirements": {**{key: req[key] for key in ("city", "event_type", "guests", "preferences") if key in req},
+                                 **({"city": self.selected_row("venue")["lieux"]["commune"]} if self.selected_row("venue") else {})},
                 "planning": self.event_data["results"]["planning"],
                 **{category: self.selection_details(category) for category in CATALOGS},
                 "costs": self.costs(),
@@ -523,6 +534,7 @@ class EventRun:
                 continue
             context = self.context(category)
             context["venue"] = venue
+            context["skip_proximity"] = True  # Vérifier la faisabilité avant de classer les villes.
             selected = self.selected_row(category)
             if selected:
                 if not compatible(category, selected, context):
@@ -541,24 +553,10 @@ class EventRun:
 
     def search_options(self, task, filters, context, accept=None):
         result = search_candidates(task, filters, catalogs=self.catalogs, context=context, accept=accept)
-        req = self.event_data["requirements"]
-        if (task != "venue" or result["status"] != "no_match"
-                or req.get("location_scope") != "province_fallback" or not filters.get("city")):
-            return result
-        # Les catalogues ne décrivent pas le voisinage : même province, jamais un rayon inventé.
-        provinces = {row["lieux"]["province"] for row in self.catalogs["venue"]
-                     if tools._normalize(row["lieux"]["commune"]) == tools._normalize(filters["city"])}
-        if len(provinces) != 1:
-            return result
-        province = provinces.pop()
-        if filters.get("province") and tools._normalize(filters["province"]) != tools._normalize(province):
-            return result
-        expanded = {key: value for key, value in filters.items() if key != "city"}
-        expanded["province"] = province
-        self.event_data["workflow"]["location_search"] = {
-            "requested_city": filters["city"], "expanded": True, "province": province,
-            "basis": "Même province du catalogue ; proximité et temps de trajet non établis."}
-        return search_candidates(task, expanded, catalogs=self.catalogs, context=context, accept=accept)
+        if task == "venue":
+            location = result.get("location_search")
+            self.event_data["workflow"]["location_search"] = location if location and location["expanded"] else None
+        return result
 
     def delegate(self, agent, demande, task, *, requirements=None, tasks=None):
         if isinstance(requirements, dict):
@@ -651,6 +649,10 @@ class EventRun:
             if budget_status not in PENDING:
                 return self.record(task, {"status": "blocked", "error": "Répartition du budget indisponible ; plafond conservé."})
             return {"status": "not_ready", "task": task, "requires": "budget"}
+        if task in ("catering", "provider") and "venue" in self.event_data["tasks"] and not self.selected_row("venue"):
+            if self.event_data["tasks"]["venue"]["status"] not in PENDING:
+                return self.record(task, {"status": "blocked", "error": "Aucune salle sélectionnée : emplacement des services indéterminé."})
+            return {"status": "not_ready", "task": task, "requires": "venue"}
         try:
             context = self.context(task)
         except (ValueError, TypeError, KeyError) as error:
@@ -815,7 +817,8 @@ class EventRun:
 
     def observe_weather(self, day, city):
         """Conserver le résultat de l'outil actuel, une seule consultation par ville/date/run."""
-        city = city.strip() if isinstance(city, str) else city
+        venue = self.selected_row("venue")
+        city = venue["lieux"]["commune"] if venue else (city.strip() if isinstance(city, str) else city)
         for observation in self.event_data["results"]["weather"]:
             if observation["date"] == day and str(observation["city"]).casefold() == str(city).casefold():
                 return deepcopy(observation)
@@ -846,6 +849,7 @@ class EventRun:
 
     def record(self, task, outcome):
         failed = self.failed_contexts() if self.interactive else {}
+        old_venue = self.selected_row("venue") if task == "venue" else None
         field = {"provider": "providers", "documents": "documents"}.get(task, task)
         if self.interactive and outcome["status"] == "success" and task != "documents":
             value = [outcome["result"]] if field == "providers" else outcome["result"]
@@ -862,6 +866,12 @@ class EventRun:
         if outcome["status"] == "success":
             field = {"provider": "providers", "documents": "documents"}.get(task, task)
             self.event_data["results"][field] = [outcome["result"]] if field in ("providers", "documents") else outcome["result"]
+            if task == "venue":
+                new_venue = self.selected_row("venue")
+                if not old_venue or old_venue["lieux"] != new_venue["lieux"]:
+                    for category in ("catering", "provider"):
+                        if self.selected_row(category):
+                            self.invalidate(category, "Recherche à recentrer sur la nouvelle salle.")
             if task == "budget" and self.interactive:
                 self.event_data["workflow"]["budget_categories"] = [category for category in CATALOGS if category in self.event_data["tasks"]]
             if self.interactive and task in ("planning", "budget", "venue"):
@@ -929,6 +939,7 @@ class EventRun:
             if not selection:
                 continue
             context = self.context(category)
+            context["skip_proximity"] = True
             found = search_candidates(category, {**context["filters"], "ids": [selection["id"]]},
                                       catalogs=self.catalogs, context=context)
             allowed_ids = context["filters"].get("ids")
@@ -1029,6 +1040,11 @@ class EventRun:
                     self.search_filters.pop(category, None)
             if geographic_change:
                 self.event_data["workflow"]["location_search"] = None
+                if self.selected_row("venue"):
+                    self.invalidate("venue", "Localisation modifiée : rechercher la salle la plus proche.")
+                for category in ("catering", "provider"):
+                    if self.selected_row(category):
+                        self.invalidate(category, "Localisation modifiée : attendre la nouvelle salle.")
             if before["requirements"].get("budget_total") != candidate.get("budget_total"):
                 self.invalidate("budget", "Budget modifié.", remove=candidate.get("budget_total") is None)
             if schedule_changed:
@@ -1165,7 +1181,7 @@ class EventRun:
             if key == "weekday" and is_preference(r"\b(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b"):
                 cleaned["preferences"] = self.turn_request
                 continue
-            if key == "location_scope" and value == "city" and known.get(key, "city") == "city":
+            if key == "location_scope" and value == "city" and known.get(key, "nearest") == "city":
                 continue
             if key == "preferences" and value in ("", None):
                 continue
@@ -1319,7 +1335,7 @@ class EventRun:
         location = self.event_data["workflow"]["location_search"]
         if location:
             lines.append(f"Aucune salle compatible à {location['requested_city']} avec les critères recherchés ; "
-                         f"recherche élargie à la province de {location['province']}. " + location["basis"])
+                         f"recherche rapprochée de {location.get('selected_city', location.get('province', 'la ville demandée'))}. " + location["basis"])
         if self.event_data["results"]["planning"]:
             planning = self.event_data["results"]["planning"]
             start, end = (datetime.fromisoformat(planning[key]).strftime("%d/%m/%Y à %H:%M") for key in ("start", "end"))

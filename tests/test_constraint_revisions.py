@@ -48,6 +48,8 @@ def failed_event(request="Modifie l'événement", task="venue"):
     run.event_data["results"]["budget"] = {"venue": .55, "catering": 0, "provider": .45}
     run.event_data["tasks"]["budget"] = {"status": "success"}
     run.event_data["tasks"][task] = {"status": "no_match", "retryable": False, "error": "Recherche précédente épuisée"}
+    if task == "provider":
+        run.record("venue", {"status": "success", "result": {"id": "salle_010"}})
     run.attempts[task] = {"count": 2, "input": {"ancienne": "recherche"}}
     return run
 
@@ -133,7 +135,7 @@ def test_unchanged_revision_does_not_reset_attempts_or_reopen_failures():
     assert run.event_data == before and run.attempts == attempts
 
 
-def test_reopened_saved_failure_executes_only_affected_specialist(tmp_path, monkeypatch):
+def test_reopened_geographic_search_refreshes_venue_and_provider(tmp_path, monkeypatch):
     run = failed_event()
     run.event_data["results"]["providers"] = [{"id": "005", "kit_id": 1}]
     run.event_data["tasks"]["provider"] = {"status": "success"}
@@ -144,6 +146,7 @@ def test_reopened_saved_failure_executes_only_affected_specialist(tmp_path, monk
     responses = iter([
         ("revise_event", {"requirements": {"location_scope": "province_fallback"}}),
         ("decision_making_agent", {"category": "venue", "demande": "Salle", "tasks": ["venue"]}),
+        ("decision_making_agent", {"category": "provider", "demande": "Prestataire près de la salle"}),
     ])
     agents = []
 
@@ -158,9 +161,11 @@ def test_reopened_saved_failure_executes_only_affected_specialist(tmp_path, monk
     updated = continue_conversation(load_conversation(conversation["conversation_id"], tmp_path),
                                     "Tu peux chercher dans la province", directory=tmp_path, orchestrator_factory=create_orchestrator)
     assert updated["event_data"]["tasks"]["venue"]["status"] == "success"
-    for field in ("planning", "budget", "providers"):
+    for field in ("planning", "budget"):
         assert updated["event_data"]["results"][field] == original["results"][field]
-    assert agents == ["Supervisor", "Supervisor", "decision making agent"]
+    assert updated["event_data"]["results"]["providers"]
+    assert updated["event_data"]["tasks"]["provider"]["status"] == "success"
+    assert agents == ["Supervisor", "Supervisor", "decision making agent", "Supervisor", "decision making agent"]
     assert updated["conversation_id"] == conversation["conversation_id"]
     assert len(list(tmp_path.glob("*.json"))) == 1
     assert load_conversation(updated["conversation_id"], tmp_path) == updated

@@ -32,7 +32,7 @@ def isolated(monkeypatch):
 def bound_run(student=True):
     run = EventRun("Étudiant, pour 100 personnes, maximum 10 000 €, un samedi de préférence." if student else
                    "Un anniversaire pour 100 personnes à Namur", interactive=True)
-    run.remember({"city": "Namur", "guests": 100, "budget_total": 10000,
+    run.remember({"city": "Namur", "location_scope": "city", "guests": 100, "budget_total": 10000,
                   **({"event_type": "soiree_etudiante"} if student else {})}, ["venue", "budget", "planning"])
     run.event_data["results"]["budget"] = {"venue": .4, "catering": .3, "provider": .3}
     run.event_data["results"]["planning"] = {"start": "2026-11-28T20:00", "end": "2026-11-29T02:00" if student else "2026-11-28T23:00"}
@@ -127,7 +127,7 @@ def tool_message(name, **arguments):
 
 def test_real_scenario_two_messages_saved_reopened_and_useful_revision(monkeypatch, tmp_path):
     monkeypatch.setattr(agent_module, "chat", Mock(return_value=tool_message("clarify", question="Quel type et combien de personnes ?")))
-    conversation = run_conversation("Organise un événement sur Namur.", directory=tmp_path, orchestrator_factory=create_orchestrator)
+    conversation = run_conversation("Organise un événement uniquement à Namur.", directory=tmp_path, orchestrator_factory=create_orchestrator)
     assert conversation["event_data"]["workflow"]["pending_input"]["kind"] == "clarification"
     answer = "Étudiant, pour 100 personnes, maximum 10 000 €, un samedi de préférence."
     stages = iter([
@@ -174,7 +174,8 @@ def test_real_scenario_two_messages_saved_reopened_and_useful_revision(monkeypat
     def choose(messages, **kwargs):
         payload = json.loads(messages[1]["content"])
         assert payload["location_search"]["expanded"]
-        assert payload["filters"]["province"] == "Namur" and "city" not in payload["filters"]
+        assert payload["filters"]["province"] == "Namur" and payload["filters"]["city"] == "Namur"
+        assert payload["location_search"]["selected_city"] == "Dinant"
         return SimpleNamespace(content=json.dumps({"id": payload["search"]["candidates"][0]["id"]}), tool_calls=None)
     monkeypatch.setattr(agent_module, "chat", Mock(side_effect=choose))
     assert supervisor.fonctions["decision_making_agent"](category="venue", demande="Salle dans la province")["status"] == "success"

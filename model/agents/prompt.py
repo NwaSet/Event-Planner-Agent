@@ -159,7 +159,7 @@ Rules:
 - Do not call unrelated tools or retrieve unnecessary data.
 - Do not call the same tool multiple times unless necessary.
 - Never relax mandatory constraints. no_match or invalid_filters is an explicit conflict.
-- location_search indicates an explicit fallback to the requested city's province after no compatible city result. Keep the provided province and all other mandatory filters; never search all Belgium or invent travel times. Report the selected venue's actual commune.
+- location_search identifies the nearest commune with compatible offers, ranked by straight-line distance using Overpass. Preserve all non-location constraints and report the selected venue's actual commune. All subsequent service and weather searches use that commune, even if the initial request named another city.
 - For an impossible task return {"error": "specific conflict"}.
 - Consider included venue equipment; avoid redundant services unless requested.
 - Dates and catalogue entries do not establish availability or confirmed reservations.

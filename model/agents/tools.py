@@ -12,6 +12,7 @@ import requests
 
 from .. import trace
 from ..llm import tool_schema
+from ..geography import select_filtered
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 LOGGER = logging.getLogger(__name__)
@@ -96,16 +97,43 @@ def _search(filename, key, filters, schema, matches, modifiers=()):
             return rows
         if not set(filters).difference({"limit", *modifiers}):
             return rows
-        candidates = [row for row in rows if matches(row, filters)]
-        if not candidates:
-            LOGGER.info("%s : aucun candidat ; retour du catalogue complet", filename)
-            return rows
+        nonlocal_filters = {key: value for key, value in filters.items() if key != "city"}
+        candidates = [row for row in rows if matches(row, nonlocal_filters)]
+        try:
+            candidates, _ = nearest_candidates(filename, candidates, filters.get("city"))
+        except (ValueError, RuntimeError) as error:
+            return _error("geography_unavailable", str(error))
         limit = filters.get("limit")
         return candidates[:limit] if limit is not None else candidates
     except Exception as error:
         # A readable catalogue remains usable if a nested field cannot be filtered.
         LOGGER.warning("Filtrage de %s impossible : %s ; retour du catalogue complet", filename, error)
         return rows
+
+
+def row_cities(row):
+    location = row["lieux"]
+    if isinstance(location, dict):
+        return [location["commune"]]
+    return [city.strip() for city in re.split(r"[/()]", location) if city.strip()]
+
+
+def nearest_candidates(filename, candidates, city, *, strict=False):
+    """Retenir la commune compatible la plus proche, sans relâcher les autres critères."""
+    if not city or not candidates:
+        return candidates, None
+    local = [row for row in candidates if _contains(row_cities(row), city)]
+    selected_city = city
+    if not local and not strict:
+        cities = sorted({name for row in candidates for name in row_cities(row)})
+        closest = select_filtered(Path(filename).stem, city, x=len(cities), cities=cities)
+        if not closest:
+            raise ValueError("Aucune ville candidate géolocalisée.")
+        selected_city = closest[0]
+        local = [row for row in candidates if _contains(row_cities(row), selected_city)]
+    return local, {"requested_city": city, "selected_city": selected_city,
+                   "expanded": _normalize(city) != _normalize(selected_city),
+                   "basis": "Distance à vol d'oiseau entre communes géolocalisées (Overpass), pas un trajet routier."}
 
 
 def _common_match(row, filters):
@@ -388,12 +416,12 @@ def _optional(kind, description, **constraints):
     return {"type": [kind, "null"], "description": description, **constraints}
 
 
-_CITY = _optional("string", "Commune d'implantation (pas un rayon de déplacement).")
+_CITY = _optional("string", "Commune de référence : sur place, puis commune compatible la plus proche à vol d'oiseau. Pour les services, utiliser la commune réelle de la salle retenue.")
 _EVENT = _optional("string", "Type d'événement adapté, par exemple mariage, concert ou reception_entreprise.")
 _GUESTS = _optional("integer", "Nombre de participants.", minimum=1)
 _IDS = _optional("array", "Identifiants exacts autorisés ; conserver les zéros initiaux.", items={"type": "string"})
 _LIMIT = _optional("integer", "Maximum de candidats filtrés (5 par défaut, null = tous). Jamais appliqué au repli.", minimum=1)
-_FALLBACK = " Fiches originales complètes. Sans filtre exploitable, filtre invalide ou aucun résultat : catalogue intégral, sans limite ; les contraintes ne sont alors pas garanties."
+_FALLBACK = " Fiches originales complètes. Sans filtre exploitable ou filtre invalide : catalogue intégral. Aucun résultat compatible : liste vide ; géolocalisation indisponible : erreur explicite."
 
 SCHEMA_CATERERS = tool_schema("get_caterers", "Recherche les traiteurs ; tous les critères de formule doivent correspondre à une même formule." + _FALLBACK, {
     "city": _CITY,

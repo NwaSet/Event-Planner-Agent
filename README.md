@@ -56,6 +56,21 @@ The system maintains an event across successive messages, searches for suitable 
 
 The system uses fictional event-provider data for demonstration purposes and public weather information.
 
+Venue searches first consider the requested commune, then the closest commune with compatible
+offers, using the Overpass/Haversine function adapted from `WIP/fonction.py` in `model/geography.py`.
+Set `OVERPASS_URL` in `.env` (the `/interpreter` suffix is added automatically), and optionally
+`OVERPASS_KEY` for the `X-API-Key` header. Distances are straight-line distances between commune
+centres, among locations resolved by Overpass; they are not driving distances or delivery costs.
+Capacity, budget, schedules and supplier restrictions remain mandatory. If no compatible offer
+exists, the search returns no match; if geolocation fails, it returns an explicit error.
+
+After a venue is selected, caterer, technical provider and weather searches use its actual commune.
+For example, a request for Namur with a venue selected in Dinant searches services from Dinant.
+Changing the venue location invalidates earlier service selections. The original requested city
+is retained in the event requirements. `location_scope=city` restricts an explicitly mandatory
+commune; `province_fallback` restricts the province; the default `nearest` permits nearby communes
+across province boundaries. A standalone service search uses the requested event location.
+
 > **Note:** This project is an academic prototype. It does not automatically book venues or contact service providers.
 
 ---
@@ -341,7 +356,7 @@ Before presenting venue candidates, Python checks that the requested catering an
 
 ## 5. Agent Tools
 
-`model/agents/tools.py` contains the public catalogue searches, weekday calculation, Open-Meteo lookup and `ask_user` approval tool. Public `get_venues`, `get_caterers` and `get_providers` retain their original complete-catalogue fallback for absent, invalid or unmatched filters.
+`model/agents/tools.py` contains the public catalogue searches, weekday calculation, Open-Meteo lookup and `ask_user` approval tool. Public `get_venues`, `get_caterers` and `get_providers` retain their complete-catalogue fallback for absent or invalid filters. Valid searches preserve their constraints and return offers in the nearest compatible commune, an empty list if none match, or a geolocation error if proximity cannot be established.
 
 `model/agents/search.py` supplies the separate LLM view: `matched`, `no_match`, `invalid_filters` or `error`, with at most 5 candidates by default (10 maximum per observation). Only compatible formulas/kits are exposed, with exact IDs, prices, descriptions and constraints. Mandatory constraints are also applied when the specialist requests another search. No complete fallback catalogue is injected into an agent conversation.
 
