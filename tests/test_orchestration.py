@@ -261,14 +261,15 @@ def test_expansion_cannot_bypass_capacity_ids_budget_space_or_hours(monkeypatch,
     agent_module.chat.assert_not_called()
 
 
-def test_expansion_still_respects_selected_provider_exclusivity(monkeypatch):
+def test_expansion_allows_previously_selected_provider_without_exclusivity(monkeypatch):
     run = EventRun("Soirée étudiante autour de Namur")
     run.remember({"guests": 120, "planning": STUDENT_PLANNING, "province": "Namur"}, ["venue", "provider"])
     run.record("provider", {"status": "success", "result": {"id": "002", "kit_id": 1}})
     _, _, _, decision = create_all_agents()
-    assert run.delegate(decision, "Salle", "venue")["status"] == "no_match"
-    assert run.event_data["results"]["providers"] == [{"id": "002", "kit_id": 1}]
-    agent_module.chat.assert_not_called()
+    monkeypatch.setattr(agent_module, "chat", select_first)
+    assert run.delegate(decision, "Salle", "venue")["status"] == "success"
+    assert run.event_data["results"]["providers"] == []  # La nouvelle commune impose une recherche de proximité.
+    assert run.event_data["tasks"]["provider"]["status"] == "invalidated"
 
 
 def test_expansion_cannot_be_redirected_to_another_province_by_tool(monkeypatch):
@@ -347,17 +348,17 @@ def test_real_student_request_integration_with_structural_fix_weather_finance_an
     assert "05/12/2026 à 22:00" in output and "06/12/2026 à 04:00" in output
     assert "Météo consultée — Namur, 2026-12-05" in output
     if compatible_venue:
-        assert "Coût TTC total : non déterminable" in output
-        assert "TVA du prestataire inconnue" in output
+        assert "Coût TTC total : non déterminable" not in output
+        assert "TVA du prestataire inconnue" not in output
         assert supervisor.event_data["results"]["venue"] == {"id": "salle_109"}
-        assert supervisor.event_data["results"]["providers"][0]["id"] in ("010", "012")
-        assert "— Dinant" in output and "(partiel)" in output
+        assert supervisor.event_data["results"]["providers"][0]["id"] == "009"  # Classement géographique simulé, aucune exclusivité.
+        assert "— Dinant" in output and "TTC" in output
     else:
         assert supervisor.event_data["results"]["venue"] is None
         assert supervisor.event_data["results"]["providers"]
         assert supervisor.event_data["tasks"]["provider"]["status"] == "success"
         assert "future salle à confirmer" in output
-        assert "Somme connue à mobiliser" not in output and ": 0,00 EUR" not in output
+        assert "Somme connue à mobiliser" in output and ": 0,00 EUR" not in output
 
 
 def test_final_financial_response_cannot_replace_python_amounts_with_llm_claims(monkeypatch):
@@ -374,8 +375,8 @@ def test_final_financial_response_cannot_replace_python_amounts_with_llm_claims(
     response = supervisor.run("Salle pour une soirée")
     assert supervisor.last_status == "success"
     assert "gratuit" not in response and "total garanti" not in response
-    assert "2 425,00 EUR TTC" in response and "600,00 EUR, hors dépense" in response
-    assert "3 025,00 EUR" in response
+    assert "2 425,00 EUR TTC" in response and "tout compris" in response
+    assert "2 425,00 EUR" in response
 
 
 def test_natural_supervisor_finish_returns_and_traces_only_the_verified_summary(monkeypatch):
@@ -473,25 +474,25 @@ def test_a_provider_refusal_remains_permanent_even_with_changed_preferences(monk
     assert chat.call_count == 1
 
 
-def test_namur_all_seven_venues_forbid_student_parties():
+def test_namur_offers_multiple_student_party_venues():
     all_namur = search_candidates("venue", {"city": "Namur", "limit": 10})
     limited = search_candidates("venue", {"city": "Namur"})
     assert all_namur["total"] == 7 and limited["shown"] == 5 and limited["truncated"]
     assert [row["id"] for row in all_namur["candidates"][5:]] == ["salle_120", "salle_142"]
-    assert all("soiree_etudiante" in row["types_evenements_interdits"] for row in all_namur["candidates"])
+    assert all("soiree_etudiante" in row["types_evenements_adaptes"] for row in all_namur["candidates"])
     filtered = search_candidates("venue", {"city": "Namur", "event_type": "soiree_etudiante"}, context={"location_scope": "city"})
-    assert filtered["status"] == "no_match" and filtered["total"] == 0 and filtered["candidates"] == []
+    assert filtered["status"] == "matched" and filtered["total"] == 7 and filtered["shown"] == 5
     assert filtered["filters"]["event_type"] == "soiree_etudiante"
 
 
 def test_student_party_requirement_reaches_search_even_if_supervisor_only_passes_city(monkeypatch):
     run = EventRun("Organise une soirée étudiante uniquement à Namur.")
     _, _, _, decision = create_all_agents()
+    monkeypatch.setattr(agent_module, "chat", select_first)
     result = run.delegate(decision, "Salle", "venue", requirements={"city": "Namur", "preferences": {"ambiance": "luxe"}})
-    assert result["status"] == "no_match" and "soirée étudiante" in result["error"]
+    assert result["status"] == "success"
     assert run.context("venue")["filters"] == {"city": "Namur", "event_type": "soiree_etudiante"}
-    assert run.event_data["results"]["venue"] is None
-    agent_module.chat.assert_not_called()
+    assert run.event_data["results"]["venue"]
     with pytest.raises(ValueError, match="Contrainte"):
         run.remember({"event_type": "mariage"})
 
@@ -514,25 +515,24 @@ def test_mandatory_constraints_are_all_applied_before_result_limit():
     base = copy.deepcopy(catalogs["venue"][0])
     base["lieux"]["commune"] = "Namur"
     base["types_evenements_adaptes"] = ["soiree_etudiante"]
-    base["types_evenements_interdits"] = []
-    base["capacite"]["maximum_personnes_sur_site"] = 200
-    base["prix"].update(location_soiree_ttc=1000, nettoyage_obligatoire_ttc=100)
-    base["contraintes"].update(heure_fin_musique="02:00", traiteur_impose=True,
-                              traiteurs_autorises_ids=["traiteur_001"], prestataire_technique_impose=True,
-                              prestataires_techniques_autorises_ids=["005"])
+    base["capacite"] = 200
+    base["prix"].update(location_soiree_ttc=1100)
+    base["heure_fin_musique"] = "02:00"
+    base["type_espace"] = "interieur"
+    base["equipements"] = ["bar"]
     rows = [copy.deepcopy(base) for _ in range(8)]
     for index, row in enumerate(rows):
         row["id"] = f"test_{index}"
-    rows[0]["types_evenements_interdits"] = ["soiree_etudiante"]  # interdiction prioritaire même si adapté
-    rows[1]["capacite"]["maximum_personnes_sur_site"] = 99
+    rows[0]["types_evenements_adaptes"] = ["conference"]  # type incompatible
+    rows[1]["capacite"] = 99
     rows[2]["prix"]["location_soiree_ttc"] = 3000
-    rows[3]["contraintes"]["heure_fin_musique"] = "22:00"
-    rows[4]["contraintes"]["traiteurs_autorises_ids"] = ["traiteur_002"]
-    rows[5]["contraintes"]["prestataires_techniques_autorises_ids"] = ["001"]
+    rows[3]["heure_fin_musique"] = "22:00"
+    rows[4]["equipements"] = []
+    rows[5]["type_espace"] = "exterieur"
     catalogs["venue"] = rows
     result = search_candidates("venue", {"city": "Namur", "event_type": "soiree_etudiante", "guests": 100,
-                               "max_budget": 2000, "rental_period": "soiree", "caterer_id": "traiteur_001",
-                               "provider_id": "005", "limit": 1}, catalogs=catalogs, context={"planning": PLANNING})
+                               "max_budget": 2000, "rental_period": "soiree", "equipment": ["bar"],
+                               "space_type": "interieur", "limit": 1}, catalogs=catalogs, context={"planning": PLANNING})
     assert result["total"] == 2 and result["shown"] == 1 and result["truncated"]
     assert result["candidates"][0]["id"] == "test_6"
 
@@ -545,7 +545,7 @@ def test_refined_search_cannot_select_a_stale_forbidden_candidate(monkeypatch):
     def fake(messages, **kwargs):
         calls.append(1)
         if len(calls) == 1:
-            return message(None, call("get_venues", event_type="soiree_etudiante"))
+            return message(None, call("get_venues", guests=400))
         return message('{"id":"salle_010"}')  # existait dans l'ancienne liste, interdit désormais
 
     monkeypatch.setattr(agent_module, "chat", fake)
@@ -588,7 +588,7 @@ def test_independent_services_continue_when_strict_venue_search_fails(monkeypatc
             return select_first(messages)
         turns.append(1)
         if len(turns) == 1:
-            return message(None, call("planning_agent", demande="Date", requirements={"city": "Namur", "preferences": {"musique": "électro"}},
+            return message(None, call("planning_agent", demande="Date", requirements={"city": "Namur", "venue_constraints": {"max_budget": 1}, "preferences": {"musique": "électro"}},
                                       tasks=["planning", "venue", "catering", "provider"]))
         if len(turns) == 2:
             return message(None, call("decision_making_agent", category="venue", demande="Salle"))
@@ -750,19 +750,14 @@ def test_late_planning_respects_existing_venue_and_repairs_once(monkeypatch):
     assert run.event_data["results"]["planning"] == PLANNING
 
 
-def test_provider_waits_for_venue_before_selecting_compatible_supplier(monkeypatch):
+def test_provider_waits_for_venue_then_honors_user_supplier_id(monkeypatch):
     run = prepared({"provider_filters": {"ids": ["005"]}}, ["provider", "venue"])
     _, _, _, decision = create_all_agents()
     monkeypatch.setattr(agent_module, "chat", select_first)
     assert run.delegate(decision, "Prestataire d'abord", "provider")["requires"] == "venue"
-    first = copy.deepcopy(run.catalogs["venue"][0])
-    second = copy.deepcopy(first)
-    second["id"] = "compatible"
-    first["contraintes"]["prestataires_techniques_autorises_ids"] = ["001"]
-    second["contraintes"]["prestataires_techniques_autorises_ids"] = ["005"]
-    run.catalogs["venue"] = [first, second]
-    assert run.delegate(decision, "Salle compatible", "venue")["status"] == "success"
-    assert run.event_data["results"]["venue"]["id"] == "compatible"
+    assert run.delegate(decision, "Salle", "venue")["status"] == "success"
+    assert run.delegate(decision, "Prestataire choisi par l'utilisateur", "provider")["status"] == "success"
+    assert run.event_data["results"]["providers"][0]["id"] == "005"
 
 
 def test_late_budget_cannot_validate_a_previously_overpriced_selection(monkeypatch):
@@ -776,11 +771,11 @@ def test_late_budget_cannot_validate_a_previously_overpriced_selection(monkeypat
     assert run.event_data["results"]["budget"] is None
 
 
-def test_exact_date_is_kept_and_catering_lead_time_checked_without_schedule():
+def test_exact_date_is_kept_without_catering_lead_time():
     run = prepared({"date": "2026-11-25", "catering_filters": {"ids": ["traiteur_001"]}}, ["catering"])
     context = run.context("catering")
     result = search_candidates("catering", context["filters"], catalogs=run.catalogs, context=context)
-    assert result["status"] == "no_match"
+    assert result["status"] == "matched"
 
 
 @pytest.mark.parametrize("field,value", [
@@ -883,9 +878,9 @@ def test_limited_budget_allocation_and_selected_offer(monkeypatch):
     assert run.delegate(decision, "Traiteur", "catering")["status"] == "success"
     assert run.delegate(decision, "Prestataire", "provider")["status"] == "success"
     assert run.costs()["known"]["catering_ttc"] <= 1500
-    assert run.costs()["known"]["provider_ht"] <= 1500
+    assert run.costs()["known"]["provider_ttc"] <= 1500
     assert run.costs()["allocations"] == {"venue": 2000, "catering": 1500, "provider": 1500}
-    assert "non confirmé" in run.costs()["warning"]
+    assert "Simulation académique" in run.costs()["warning"]
 
 
 @pytest.mark.parametrize("budget", [
@@ -909,35 +904,20 @@ def test_budget_absent_categories_and_no_invented_ceiling():
     assert "max_budget" not in run.context("venue")["filters"]
 
 
-@pytest.mark.parametrize("venue_id,category,allowed", [
-    ("salle_010", "provider", "prestataires_techniques_autorises_ids"),
-    ("salle_001", "catering", "traiteurs_autorises_ids"),
-])
-def test_mandatory_supplier_ids_survive_delegation(monkeypatch, venue_id, category, allowed):
-    run = prepared({"planning": PLANNING, "venue_filters": {"ids": [venue_id]}}, ["venue", category])
+@pytest.mark.parametrize("venue_id", ["salle_109", "salle_001"])
+def test_user_supplier_ids_survive_delegation_without_venue_exclusivity(monkeypatch, venue_id):
+    run = prepared({"planning": PLANNING, "venue_filters": {"ids": [venue_id]},
+                    "provider_filters": {"ids": ["030"]}}, ["venue", "provider"])
     _, _, _, decision = create_all_agents()
     monkeypatch.setattr(agent_module, "chat", select_first)
-    assert run.delegate(decision, "Salle imposée", "venue")["status"] == "success"
-    captured = []
-
-    def choose(messages, **kwargs):
-        payload = json.loads(messages[1]["content"])
-        captured.append(payload)
-        ids = run.selected_row("venue")["contraintes"][allowed]
-        assert all(candidate["id"] in ids for candidate in payload["search"]["candidates"])
-        assert payload["venue_id"] == venue_id
-        assert "venue" not in payload
-        return select_first(messages)
-
-    monkeypatch.setattr(agent_module, "chat", choose)
-    assert run.delegate(decision, "Choisir", category)["status"] == "success"
-    assert captured
-    assert run.selected_row(category)["id"] in run.selected_row("venue")["contraintes"][allowed]
+    assert run.delegate(decision, "Salle", "venue")["status"] == "success"
+    assert run.delegate(decision, "Prestataire demandé", "provider")["status"] == "success"
+    assert run.selected_row("provider")["id"] == "030"
 
 
 def test_simultaneous_constraints_and_no_relaxation(monkeypatch):
     run = prepared({"city": "Namur", "guests": 100, "planning": PLANNING,
-                      "venue_filters": {"accessible": True, "space_type": "interieur", "seated": True,
+                      "venue_filters": {"equipment": ["bar"], "space_type": "interieur",
                                         "max_budget": 5000, "rental_period": "soiree"}}, ["venue"])
     _, _, _, decision = create_all_agents()
     monkeypatch.setattr(agent_module, "chat", select_first)
@@ -945,8 +925,8 @@ def test_simultaneous_constraints_and_no_relaxation(monkeypatch):
     assert result["status"] == "success"
     venue = run.selected_row("venue")
     assert venue["lieux"]["commune"] == "Namur"
-    assert venue["equipements"]["acces_pmr"]
-    assert venue["capacite"]["interieur"]["personnes_assises"] >= 100
+    assert "bar" in venue["equipements"]
+    assert venue["capacite"] >= 100
     assert run.costs()["known"]["venue_ttc"] <= 5000
     with pytest.raises(ValueError, match="Contrainte"):
         run.remember({"city": "Liège"}, ["venue"])
@@ -967,7 +947,7 @@ def test_no_match_is_terminal_and_never_exposes_fallback(monkeypatch):
 
 @pytest.mark.parametrize("category,filters", [
     ("venue", {"city": "Namur", "max_budget": 1}),
-    ("venue", {"event_type": "soiree"}),
+    ("venue", {"event_type": "type_inconnu"}),
     ("provider", {"ids": []}),
     ("catering", {"max_budget": 2000}),
     ("venue", {"guests": "beaucoup"}),
@@ -980,7 +960,7 @@ def test_compact_search_diagnostics(category, filters):
 
 @pytest.mark.parametrize("category,filters,field", [
     ("catering", {"ids": ["traiteur_001"], "guests": 100, "max_price_per_person": 40}, "formules"),
-    ("provider", {"ids": ["005"], "max_budget": 5000}, "kits"),
+    ("provider", {"ids": ["005"], "max_budget": 1000}, "kits"),
 ])
 def test_only_compatible_offers_are_projected(category, filters, field):
     result = search_candidates(category, filters)
@@ -992,7 +972,7 @@ def test_only_compatible_offers_are_projected(category, filters, field):
             if category == "catering":
                 assert offer["prix_par_personne_ttc"] <= 40
             else:
-                assert offer["prix_estime_eur_ht"] <= 5000
+                assert offer["prix_ttc"] <= 5000
 
 
 def test_invalid_json_repaired_once_in_same_conversation(monkeypatch):
@@ -1173,7 +1153,7 @@ def test_plan_approval_does_not_replace_draft_approval(monkeypatch):
 
 @pytest.mark.parametrize("pending", ["planning", "budget", "catering", "provider"])
 def test_plan_waits_for_all_declared_tasks_before_approval_and_writer(monkeypatch, pending):
-    run = prepared({"document_kind": "email"}, [pending, "documents"])
+    run = prepared({"document_kind": "email", **({"budget_total": 5000} if pending == "budget" else {})}, [pending, "documents"])
     _, writer, _, _ = create_all_agents()
     approval = Mock()
     monkeypatch.setattr(tools, "ask_user", approval)
@@ -1276,15 +1256,13 @@ def test_music_deadline_after_midnight_and_explicit_music_end():
     assert search_candidates("venue", {"ids": ["salle_001"]}, context=context)["status"] == "matched"
 
 
-def test_catering_kitchen_and_lead_time_are_checked():
+def test_catering_has_no_kitchen_or_lead_time_requirement():
     catalogs = load_catalogs()
     venue = copy.deepcopy(catalogs["venue"][0])
-    venue["equipements"]["cuisine_traiteur"] = False
     context = {"venue": venue, "planning": PLANNING, "today": "2026-11-24"}
-    assert search_candidates("catering", {"ids": ["traiteur_001"]}, catalogs=catalogs, context=context)["status"] == "no_match"
-    venue["equipements"]["cuisine_traiteur"] = True
+    assert search_candidates("catering", {"ids": ["traiteur_001"]}, catalogs=catalogs, context=context)["status"] == "matched"
     context["today"] = "2026-12-18"
-    assert search_candidates("catering", {"ids": ["traiteur_001"]}, catalogs=catalogs, context=context)["status"] == "no_match"
+    assert search_candidates("catering", {"ids": ["traiteur_001"]}, catalogs=catalogs, context=context)["status"] == "matched"
 
 
 def test_duplicate_search_observation_not_reinjected(monkeypatch):
@@ -1355,11 +1333,11 @@ def test_impossible_planning_leaves_other_tasks_available_without_retry(monkeypa
 
 def test_standalone_caterer_uses_event_area_instead_of_its_head_office(monkeypatch):
     run = prepared({"city": "Namur"}, ["catering"])
-    assert run.context("catering")["filters"]["province"] == "Namur"
+    assert "province" not in run.context("catering")["filters"]
     _, _, _, decision = create_all_agents()
     monkeypatch.setattr(agent_module, "chat", select_first)
     assert run.delegate(decision, "Traiteur à Namur", "catering")["status"] == "success"
-    assert "Namur" in run.selected_row("catering")["zones_intervention"]
+    assert run.selected_row("catering")["lieux"]["commune"] == "Namur"
 
 
 def test_early_final_response_cannot_claim_success(monkeypatch):
@@ -1468,20 +1446,18 @@ def test_prepared_candidates_not_reinjected_when_specialist_searches_again(monke
     assert "candidates" not in json.loads(observations[-1]["content"])
 
 
-def test_venue_candidates_exclude_impossible_mandatory_supplier(monkeypatch):
-    run = prepared({}, ["venue", "provider"])
-    # Deux salles admissibles ; seule la seconde possède un fournisseur autorisé existant.
+def test_venue_candidates_exclude_insufficient_capacity_without_supplier_exclusivity(monkeypatch):
+    run = prepared({"guests": 100, "provider_filters": {"ids": ["005"]}}, ["venue", "provider"])
     first = copy.deepcopy(run.catalogs["venue"][0])
     second = copy.deepcopy(first)
+    first["capacite"] = 50
     second["id"] = "salle_solution"
-    first["contraintes"]["prestataires_techniques_autorises_ids"] = ["inexistant"]
-    second["contraintes"]["prestataires_techniques_autorises_ids"] = ["005"]
     run.catalogs["venue"] = [first, second]
     _, _, _, decision = create_all_agents()
     monkeypatch.setattr(agent_module, "chat", select_first)
-    assert run.delegate(decision, "Choisir une salle", "venue")["status"] == "success"
+    assert run.delegate(decision, "Salle pour 100", "venue")["status"] == "success"
     assert run.event_data["results"]["venue"]["id"] == "salle_solution"
-    assert run.delegate(decision, "Choisir le fournisseur", "provider")["status"] == "success"
+    assert run.delegate(decision, "Fournisseur", "provider")["status"] == "success"
     assert run.event_data["results"]["providers"][0]["id"] == "005"
 
 
@@ -1572,14 +1548,14 @@ def test_birthday_first_search_retains_city_and_all_structured_constraints(monke
     run = EventRun(BIRTHDAY_EMAIL)
     _, _, _, decision = create_all_agents()
     run.remember({"event_type": "anniversaire", "guests": "100", "budget_total": 5000,
-                  "venue_filters": {"accessible": True, "rental_period": "soiree"}}, ["venue"])
+                  "venue_filters": {"equipment": ["bar"], "rental_period": "soiree"}}, ["venue"])
     run.record("budget", {"status": "success", "result": {"venue": 1, "catering": 0, "provider": 0}})
 
     def fake(messages, **kwargs):
         payload = json.loads(messages[1]["content"])
         filters = payload["search"]["filters"]
         assert filters == {"city": "Namur", "event_type": "anniversaire", "guests": 100,
-                           "max_budget": 5000, "accessible": True, "rental_period": "soiree"}
+                           "max_budget": 5000, "equipment": ["bar"], "rental_period": "soiree"}
         assert all(row["lieux"]["commune"] == "Namur" for row in payload["search"]["candidates"])
         return select_first(messages)
 
@@ -1601,7 +1577,7 @@ def test_decision_empty_non_json_or_partial_output_has_one_compact_repair(monkey
         if len(calls) == 1:
             assert tools
             payload = json.loads(messages[1]["content"])
-            assert payload["search"]["total"] == payload["search"]["shown"] == 4
+            assert payload["search"]["total"] == 7 and payload["search"]["shown"] == 5
             return message(bad)
         assert tools is None
         assert "objet JSON compact" in messages[-1]["content"]
@@ -1689,7 +1665,7 @@ def test_birthday_venue_then_writer_then_human_approval_without_sending(monkeypa
         if agent == "decision making agent":
             payload = json.loads(messages[1]["content"])
             assert payload["filters"] == {"city": "Namur", "guests": 100, "event_type": "anniversaire"}
-            assert payload["search"]["total"] == 4
+            assert payload["search"]["total"] == 7
             return select_first(messages)
         if agent == "writer agent":
             assert approval.call_count == 1  # le plan précède toute rédaction
@@ -1736,7 +1712,7 @@ def test_email_cannot_invent_venue_when_selection_failed(monkeypatch):
     assert run.delegate(writer, "Email", "documents")["status"] == "blocked"
     assert run.delegate(writer, "Email", "documents")["status"] == "reused"
     assert run.counters["llm_calls"] == 0 and not run.event_data["results"]["documents"]
-    assert "destinataire inconnu" in run.summary("Sélection impossible")
+    assert "aucune salle sélectionnée" in run.summary("Sélection impossible")
     approval.assert_not_called()
 
 

@@ -7,7 +7,7 @@ from copy import deepcopy
 from datetime import date, datetime, timedelta
 
 from .agents import tools
-from .finance import FINANCIAL_FIELDS, amount, money, venue_cost, catering_cost, provider_cost, financial_lines
+from .finance import amount, money, venue_cost, catering_cost, provider_cost, financial_lines
 from .agents.search import (CATALOGS, check_schedule, compact_tool, load_catalogs, search_candidates,
                             compatible, normalize_arguments, event_type_error)
 
@@ -24,8 +24,6 @@ REQUIREMENT_PROPERTIES = {
     "date": {"type": "string", "description": "Date imposée YYYY-MM-DD."},
     "weekday": {"type": "string", "enum": list(tools.DAYS), "description": "Jour demandé, sans inventer une date."},
     "rental_period": {"type": "string", "enum": ["journee", "soiree"]},
-    "accessible": {"type": "boolean", "description": "Accès PMR explicitement exigé ; omettre si inconnu."},
-    "seated": {"type": "boolean", "description": "Places assises explicitement exigées ; omettre si inconnu."},
     "space_type": {"type": "string", "enum": ["interieur", "exterieur", "les deux"], "description": "Type d'espace explicitement imposé, jamais une valeur par défaut."},
     "planning": {"type": "object", "properties": {"start": {"type": "string"}, "end": {"type": "string"}},
                  "required": ["start", "end"], "additionalProperties": False},
@@ -33,10 +31,6 @@ REQUIREMENT_PROPERTIES = {
     "music_end": {"type": "string", "description": "Fin de musique imposée YYYY-MM-DDTHH:MM si distincte."},
     "preferences": {"type": "string"},
     "document_kind": {"type": "string", "enum": ["email", "synthesis"]},
-    "catering_distance_km": {"type": "number"},
-    "provider_distance_km": {"type": "number"},
-    "provider_vehicles": {"type": "integer"},
-    "provider_vat_rate": {"type": "number"},
     **{category + "_constraints": {"type": "object", "additionalProperties": False,
                                   "description": "Exigences métier explicites : plafond propre au service, IDs autorisés, caractéristiques imposées.",
                                   "properties": {key: value for key, value in schema["function"]["parameters"]["properties"].items() if key != "limit"}}
@@ -49,13 +43,17 @@ def business_requirements(requirements):
     if not isinstance(requirements, dict):
         return requirements
     result = deepcopy(requirements)
+    # Anciens paramètres de facturation sans effet sur les catalogues académiques.
+    for field in ("catering_distance_km", "provider_distance_km", "provider_vehicles", "provider_vat_rate", "accessible", "seated"):
+        result.pop(field, None)
     for category in CATALOGS:
         legacy = result.pop(category + "_filters", None)
         key = category + "_constraints"
         if legacy is not None:
             result[key] = {**legacy, **result.get(key, {})} if isinstance(legacy, dict) else legacy
         if isinstance(result.get(key), dict):
-            result[key].pop("limit", None)
+            for field in ("limit", "accessible", "seated", "provider_id"):
+                result[key].pop(field, None)
             if not result[key]:
                 result.pop(key)
     return result
@@ -99,8 +97,8 @@ def first_weekday_date(text, today):
 def describe_filters(filters):
     labels = {"city": "ville", "province": "province", "event_type": "type d'événement",
               "guests": "effectif", "max_budget": "plafond en EUR", "rental_period": "location",
-              "ids": "identifiants autorisés", "accessible": "accès PMR", "seated": "places assises",
-              "space_type": "espace", "caterer_id": "traiteur imposé", "provider_id": "prestataire imposé"}
+              "ids": "identifiants autorisés",
+              "space_type": "espace"}
 
     def display(value):
         if isinstance(value, list):
@@ -319,14 +317,6 @@ class EventRun:
             if "enum" in REQUIREMENT_PROPERTIES[key] and value not in REQUIREMENT_PROPERTIES[key]["enum"]:
                 raise ValueError(f"Valeur invalide pour {key}.")
         guests, total = requirements.get("guests"), requirements.get("budget_total")
-        for field in FINANCIAL_FIELDS:
-            value = requirements.get(field)
-            if value is not None and (type(value) not in (int, float) or not math.isfinite(value) or value < 0):
-                raise ValueError(f"Valeur financière invalide : {field}.")
-        if "provider_vehicles" in requirements and (type(requirements["provider_vehicles"]) is not int or requirements["provider_vehicles"] < 1):
-            raise ValueError("provider_vehicles : entier positif attendu.")
-        if requirements.get("provider_vat_rate", 0) > 1:
-            raise ValueError("provider_vat_rate : fraction entre 0 et 1 attendue, jamais un taux supposé.")
         if guests is not None and (type(guests) is not int or guests < 1):
             raise ValueError("Effectif invalide.")
         if total is not None and (type(total) not in (int, float) or not math.isfinite(total) or total < 0):
@@ -473,7 +463,7 @@ class EventRun:
             if field in req:
                 filters[field] = req[field]
         if task == "venue":
-            filters.update({key: req[key] for key in ("accessible", "seated", "space_type") if key in req})
+            filters.update({key: req[key] for key in ("space_type",) if key in req})
             if req.get("rental_period"):
                 filters.setdefault("rental_period", req["rental_period"])
             for field in ("city", "province"):
@@ -492,17 +482,8 @@ class EventRun:
         if task in ("catering", "provider"):
             if venue:
                 filters["city"] = venue["lieux"]["commune"]
-                if task == "catering":
-                    filters["province"] = venue["lieux"]["province"]
-                else:
-                    filters.pop("province", None)
             elif req.get("city"):
                 filters.setdefault("city", req["city"])
-                if task == "catering":
-                    provinces = {row["lieux"]["province"] for row in self.catalogs["venue"]
-                                 if tools._normalize(row["lieux"]["commune"]) == tools._normalize(req["city"])}
-                    if req.get("province") or len(provinces) == 1:
-                        filters.setdefault("province", req.get("province") or provinces.pop())
             elif req.get("province"):
                 filters.setdefault("province", req["province"])
         total = req.get("budget_total")
@@ -512,7 +493,6 @@ class EventRun:
         weather = self.relevant_weather(filters.get("city")) if task == "venue" else None
         return {"filters": filters, "planning": self.event_data["results"]["planning"], "date": req.get("date"),
                 **({"weather": weather} if weather else {}),
-                "financial": {key: req[key] for key in FINANCIAL_FIELDS if key.startswith(task + "_") and key in req},
                 "request": self.turn_request if self.interactive else self.event_data["workflow"]["request"],
                 "current_request": self.turn_request,
                 "venue": venue if task != "venue" else None, "today": self.today,
@@ -532,7 +512,7 @@ class EventRun:
         venue = self.selected_row("venue")
         if venue:
             context["requirements"]["city"] = venue["lieux"]["commune"]
-            context["venue_constraints"] = {"heure_fin_musique": venue["contraintes"]["heure_fin_musique"]}
+            context["venue_constraints"] = {"heure_fin_musique": venue["heure_fin_musique"]}
         weather = self.relevant_weather(context["requirements"].get("city"))
         if weather:
             context["weather"] = weather
@@ -576,7 +556,7 @@ class EventRun:
             costs = {"known": {key: value for key, value in costs["known"].items()
                                if any(key.startswith(category + "_") for category in relevant)},
                      "details": {key: value for key, value in costs["details"].items() if key in relevant},
-                     "warning": "Montants connus seulement ; devis, suppléments et disponibilité à confirmer."}
+                     "warning": costs["warning"]}
         return {"document_kind": self.document_kind(),
                 **({"document": deepcopy(document)} if document else {}),
                 "requirements": {**{key: req[key] for key in ("city", "event_type", "guests", "preferences") if key in req},
@@ -789,7 +769,7 @@ class EventRun:
                     if task == "catering":
                         extra = self.requested_catering_filters(extra)
                     optional = {key: value for key, value in extra.items()
-                                if key in ("accessible", "seated", "space_type") and key not in context["filters"]}
+                                if key in ("space_type",) and key not in context["filters"]}
                     confirmed = self.supervisor_requirements(optional)
                     extra = {key: value for key, value in extra.items() if key not in optional or key in confirmed}
                 for key, value in context["filters"].items():
@@ -1285,14 +1265,24 @@ class EventRun:
                     requirements.pop(key)
         legacy_venue = requirements.get("venue_filters")
         if category in (None, "venue") and isinstance(legacy_venue, dict):
-            for key in ("accessible", "seated", "space_type"):
+            for key in ("space_type",):
                 if key in legacy_venue:
                     requirements.setdefault(key, legacy_venue[key])
         def is_preference(pattern):
             clauses = [clause for clause in re.split(r"[.,;!?\n]", text) if re.search(pattern, clause)]
-            return bool(clauses) and all(re.search(r"\b(?:preference|idealement|si possible)\b", clause) for clause in clauses)
+            return bool(clauses) and all(re.search(r"\b(?:prefer\w*|idealement|si possible)\b", clause)
+                                         and not re.search(r"\b(?:obligatoire\w*|imperativement|exige\w*)\b", clause)
+                                         for clause in clauses)
+        venue_constraints = requirements.get("venue_constraints")
+        if isinstance(venue_constraints, dict) and "space_type" in venue_constraints and is_preference(r"\b(?:interieur|exterieur)\b"):
+            venue_constraints.pop("space_type")
+            requirements["preferences"] = self.turn_request
+            if not venue_constraints:
+                requirements.pop("venue_constraints")
         cleaned = {}
         for key, value in requirements.items():
+            if key in ("catering_distance_km", "provider_distance_km", "provider_vehicles", "provider_vat_rate", "accessible", "seated"):
+                continue
             if key.endswith("_filters") or key == "assumptions":
                 continue  # Contrat historique accepté sans importer ses objets techniques.
             if key not in REQUIREMENT_PROPERTIES and value is None:
@@ -1321,32 +1311,15 @@ class EventRun:
                 continue  # Action conversationnelle déjà enregistrée, pas une contrainte du plan.
             if category and key in ("planning", "date", "weekday", "document_kind", "music_required", "music_end"):
                 continue
-            if key in ("provider_vat_rate", "provider_distance_km", "catering_distance_km", "provider_vehicles"):
-                if category:
-                    continue
-                number = r"(\d+(?:[.,]\d+)?)"
-                if key == "provider_vat_rate":
-                    values = [float(v.replace(",", ".")) / 100 for v in re.findall(r"tva\D{0,20}" + number + r"\s*%", text)]
-                elif key == "provider_vehicles":
-                    values = [float(v) for v in re.findall(r"\b(\d+)\s+vehicules?\b", text)]
-                else:
-                    who = "prestataire" if key.startswith("provider") else "traiteur"
-                    values = [float(v.replace(",", ".")) for v in re.findall(who + r"[^.;!?]{0,60}?\b" + number + r"\s*km\b", text)]
-                if value not in values:
-                    continue
-            if key in ("accessible", "seated", "space_type", "music_required"):
+            if key in ("space_type", "music_required"):
                 if category in ("catering", "provider") and key != "music_required":
                     continue
-                patterns = {"accessible": r"\b(?:pmr|mobilite reduite|fauteuil roulant)\b",
-                            "seated": r"\b(?:places assises|personnes assises|tout le monde assis)\b",
-                            "space_type": r"\b(?:interieur|exterieur)\b",
+                patterns = {"space_type": r"\b(?:interieur|exterieur)\b",
                             "music_required": r"\b(?:musique|dj)\b"}
                 if not re.search(patterns[key], text) or is_preference(patterns[key]):
                     continue
                 if key == "music_required" and value is False and not re.search(r"\b(?:sans|pas de) musique\b", text):
                     continue
-                if key in ("accessible", "seated") and value is not True:
-                    continue  # Une exigence positive n'autorise pas le modèle à injecter False.
                 if key == "space_type":
                     inside, outside = "interieur" in text, "exterieur" in text
                     expected = ("les deux" if re.search(r"interieur\s+et\s+exterieur|exterieur\s+et\s+interieur", text)
@@ -1417,14 +1390,14 @@ class EventRun:
             return None
         details = {key: row[key] for key in ("id", "nom", "lieux")}
         if category == "venue":
-            details.update({key: row[key] for key in ("prix", "equipements", "contraintes")})
+            details.update({key: row[key] for key in ("type_espace", "capacite", "types_evenements_adaptes",
+                                                      "prix", "equipements", "heure_fin_musique")})
         else:
             selection = self.event_data["results"]["catering"] if category == "catering" else self.event_data["results"]["providers"][0]
             offer_key, field = ("formula_id", "formules") if category == "catering" else ("kit_id", "kits")
             details["offer"] = next(offer for offer in row[field] if offer["id"] == selection[offer_key])
-            for key in ("frais_supplementaires", "deplacement", "boissons", "reservation"):
-                if key in row:
-                    details[key] = row[key]
+            if category == "catering":
+                details["options_alimentaires"] = row["options_alimentaires"]
         return details
 
     def settled(self):
@@ -1488,23 +1461,14 @@ class EventRun:
                     missing.append("Période de location à confirmer : tarif journée utilisé par défaut, tarif soirée également indiqué.")
             elif category == "catering":
                 detail = catering_cost(row, self.selection_details(category)["offer"],
-                                       self.context(category)["filters"].get("guests"), req.get("catering_distance_km"))
+                                       self.context(category)["filters"].get("guests"))
                 if detail["known_ttc"] is not None:
                     known["catering_ttc"] = detail["known_ttc"]
                 else:
                     missing.append("Effectif du repas à préciser.")
-                if detail["travel_ttc"] is None:
-                    missing.append("Kilométrage aller-retour du traiteur à confirmer, en supplément du forfait livraison.")
-                missing.append("Boissons et éventuel personnel supplémentaire à chiffrer.")
             elif category == "provider":
                 detail = provider_cost(row, self.selection_details(category)["offer"], req)
-                known["provider_ht"] = detail["known_ht"]
-                if detail["known_ttc"] is not None:
-                    known["provider_ttc"] = detail["known_ttc"]
-                else:
-                    missing.append("Taux de TVA du prestataire à confirmer ; son montant HT est exclu du sous-total TTC.")
-                if detail["travel_ht"] is None:
-                    missing.append("Kilométrage facturable et nombre de véhicules du prestataire à confirmer.")
+                known["provider_ttc"] = detail["known_ttc"]
             details[category] = detail
         subtotal = sum((money(value) for key, value in known.items() if key.endswith("_ttc")), money(0))
         return {"known": known, "budget_total": req.get("budget_total"),
@@ -1513,7 +1477,7 @@ class EventRun:
                 "known_over_budget": req.get("budget_total") is not None and subtotal > money(req["budget_total"]),
                 "allocations": ({key: amount(money(req["budget_total"]) * money(value)) for key, value in self.event_data["results"]["budget"].items()}
                                 if req.get("budget_total") is not None and self.event_data["results"]["budget"] else None),
-                "warning": "Coût total non confirmé : HT/TTC distincts, TVA prestataire, déplacements, boissons et personnel éventuels à chiffrer. Caution hors dépense."}
+                "warning": "Simulation académique : tous les prix sont TTC, sans supplément."}
 
     def summary(self, reason):
         lines = ["Résultat " + ("consolidé." if self.successful() else "partiel. " + reason)]
@@ -1568,17 +1532,7 @@ class EventRun:
             lines.append("Des brouillons de versions antérieures sont archivés ; leurs accords ne valent pas pour le plan actuel.")
         venue = self.selected_row("venue")
         if venue:
-            constraints = venue["contraintes"]
-            lines.append(f"Fin de la musique autorisée par la salle : {constraints['heure_fin_musique']}.")
-            for category, flag, ids_key, label in (
-                ("catering", "traiteur_impose", "traiteurs_autorises_ids", "Traiteurs autorisés par la salle"),
-                ("provider", "prestataire_technique_impose", "prestataires_techniques_autorises_ids", "Prestataires techniques autorisés par la salle"),
-            ):
-                if constraints[flag]:
-                    catalog = self.catalogs[category]
-                    names = {row["id"]: row["nom"] for row in catalog} if isinstance(catalog, list) else {}
-                    allowed = [names.get(identifier, f"référence {identifier} à vérifier") for identifier in constraints[ids_key]]
-                    lines.append(label + " : " + (", ".join(allowed) or "aucun — contrainte non résolue") + ".")
+            lines.append(f"Fin de la musique autorisée par la salle : {venue['heure_fin_musique']}.")
         elif self.event_data["results"]["catering"] or self.event_data["results"]["providers"]:
             lines.append("Compatibilité du traiteur et des prestataires avec la future salle à confirmer.")
         lines.append("Disponibilités non vérifiées ; aucune réservation confirmée. Aucun email envoyé.")

@@ -227,10 +227,10 @@ def test_first_weekday_uses_current_year_or_explicit_year(text, today, expected)
     assert event_state.first_weekday_date(text, today) == expected
 
 
-def test_alias_preserves_catalogue_prohibitions():
+def test_alias_preserves_allowed_event_types():
     row = copy.deepcopy(load_catalogs()["venue"][0])
     row["types_evenements_adaptes"] = ["reception_entreprise"]
-    row["types_evenements_interdits"] = ["reception_entreprise"]
+    row["types_evenements_adaptes"] = ["concert"]
     assert not tools._venue_match(row, {"event_type": "afterwork"})
 
 

@@ -35,7 +35,7 @@ def bound_run(student=True):
     run.remember({"city": "Namur", "location_scope": "city", "guests": 100, "budget_total": 10000,
                   **({"event_type": "soiree_etudiante"} if student else {})}, ["venue", "budget", "planning"])
     run.event_data["results"]["budget"] = {"venue": .4, "catering": .3, "provider": .3}
-    run.event_data["results"]["planning"] = {"start": "2026-11-28T20:00", "end": "2026-11-29T02:00" if student else "2026-11-28T23:00"}
+    run.event_data["results"]["planning"] = {"start": "2026-11-28T20:00", "end": "2026-11-29T04:00" if student else "2026-11-28T23:00"}
     if student:
         run.event_data["requirements"]["preferences"] = run.turn_request
     for task in ("budget", "planning"):
@@ -106,7 +106,8 @@ def test_logged_revision_does_not_reintroduce_invented_filters_or_restart_no_mat
     supervisor.fonctions["decision_making_agent"](category="venue", demande="Salle")
     before = copy.deepcopy(run.event_data)
     attempts = copy.deepcopy(run.attempts)
-    revision = copy.deepcopy(FIXTURE["calls"][2]["arguments"])
+    revision = copy.deepcopy(FIXTURE["calls"][2]["arguments"] )
+    revision["requirements"]["planning"] = copy.deepcopy(run.event_data["results"]["planning"])
     result = supervisor.fonctions["revise_event"](**revision)
     assert result["status"] == "unchanged"
     assert run.event_data == before and run.attempts == attempts
@@ -150,7 +151,7 @@ def test_real_scenario_two_messages_saved_reopened_and_useful_revision(monkeypat
             payload = json.loads(messages[1]["content"])
             assert "weekday" not in payload["requirements"]
             assert "préférence" in payload["requirements"]["preferences"]
-            return SimpleNamespace(content=json.dumps({"start": "2026-11-28T20:00", "end": "2026-11-29T02:00"}), tool_calls=None)
+            return SimpleNamespace(content=json.dumps({"start": "2026-11-28T20:00", "end": "2026-11-29T04:00"}), tool_calls=None)
         pytest.fail("Aucun Decision-Making nécessaire sans candidat compatible")
     monkeypatch.setattr(agent_module, "chat", simulate)
     conversation = continue_conversation(conversation, answer, directory=tmp_path, orchestrator_factory=create_orchestrator)
@@ -186,20 +187,19 @@ def test_real_scenario_two_messages_saved_reopened_and_useful_revision(monkeypat
 
 def test_confirmed_constraints_are_reused_even_if_not_repeated_in_message():
     run, supervisor = bound_run(student=False)
-    run.event_data["requirements"]["venue_constraints"] = {"accessible": True, "seated": True}
+    run.event_data["requirements"]["venue_constraints"] = {"space_type": "exterieur"}
     captured = Mock(return_value={"status": "captured"})
     run.delegate = captured
     supervisor.fonctions["decision_making_agent"](category="venue", demande="Salle")
-    assert run.context("venue")["filters"]["accessible"] is True
-    assert run.context("venue")["filters"]["seated"] is True
+    assert run.context("venue")["filters"]["space_type"] == "exterieur"
 
 
-def test_explicit_accessibility_and_seating_build_filters_in_python():
+def test_only_supported_space_filter_remains_after_simplification():
     run = EventRun("Salle avec accès PMR obligatoire, places assises, intérieur et extérieur", interactive=True)
     req = run.supervisor_requirements({"accessible": True, "seated": True, "space_type": "les deux"}, category="venue")
     run.remember(req)
     filters = run.context("venue")["filters"]
-    assert filters["accessible"] is True and filters["seated"] is True and filters["space_type"] == "les deux"
+    assert "accessible" not in filters and "seated" not in filters and filters["space_type"] == "les deux"
     assert "venue_filters" not in run.event_data["requirements"]
 
 
@@ -208,7 +208,7 @@ def test_explicit_financial_values_remain_valid_without_assumed_defaults(rate, d
     run = EventRun(f"TVA {rate * 100:g} %, prestataire à {distance} km, traiteur à {distance} km, 1 véhicule", interactive=True)
     values = {"provider_vat_rate": rate, "provider_distance_km": distance,
               "catering_distance_km": distance, "provider_vehicles": 1}
-    assert run.supervisor_requirements(values) == values
+    assert run.supervisor_requirements(values) == {}
 
 
 def test_explicit_email_request_still_creates_pending_plan_approval():
@@ -243,10 +243,10 @@ def test_stringified_requirements_are_rejected_before_state_mutation(monkeypatch
     delegate.assert_not_called()
 
 
-def test_weekday_preference_does_not_cancel_an_independent_accessibility_requirement():
+def test_weekday_preference_survives_unsupported_accessibility():
     run = EventRun("Accès PMR obligatoire, un samedi de préférence.", interactive=True)
     requirements = run.supervisor_requirements({"accessible": True, "weekday": "saturday"})
-    assert requirements["accessible"] is True
+    assert "accessible" not in requirements
     assert "weekday" not in requirements and "samedi" in requirements["preferences"]
 
 
@@ -260,7 +260,8 @@ def test_unwanted_document_cannot_be_added(wording):
 def test_unknown_null_budget_does_not_erase_known_budget_but_explicit_unlimited_does():
     run, supervisor = bound_run()
     assert run.supervisor_requirements({"budget_total": None}) == {}
-    run.turn_request = "Finalement, budget illimité"
+    run = EventRun("Finalement, budget illimité", event_data=run.event_data, interactive=True)
+    supervisor._bind(run)
     result = supervisor.fonctions["revise_event"](requirements={"budget_total": None})
     assert result["status"] == "updated"
     assert "budget_total" not in run.event_data["requirements"] and run.event_data["results"]["budget"] is None
@@ -271,8 +272,7 @@ def test_unknown_headcount_and_budget_are_not_manufactured_from_schema_examples(
     assert run.supervisor_requirements({"guests": 100, "budget_total": 0}) == {}
 
 
-def test_explicit_legacy_accessibility_filter_is_translated_to_a_business_constraint():
+def test_legacy_accessibility_and_seating_are_removed():
     run = EventRun("Une salle PMR avec des places assises obligatoires", interactive=True)
     assert run.supervisor_requirements({"venue_filters": {"accessible": True, "seated": True,
-                                                          "space_type": "les deux", "limit": 5}}, category="venue") == {
-        "accessible": True, "seated": True}
+                                                          "space_type": "les deux", "limit": 5}}, category="venue") == {}

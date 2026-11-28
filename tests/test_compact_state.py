@@ -68,7 +68,7 @@ def test_legacy_requirements_drop_technical_fields_but_keep_mandatory_constraint
                                  provider_filters={"max_budget": 2500}, prompt="RAW_PROMPT", raw_result={"large": [1]})
     run = EventRun("Suite", event_data=state, interactive=True)
     req = run.event_data["requirements"]
-    assert req["venue_constraints"] == {"ids": ["salle_054"], "accessible": True}
+    assert req["venue_constraints"] == {"ids": ["salle_054"]}
     assert req["provider_constraints"] == {"max_budget": 2500}
     assert req["budget_total"] == 10000
     assert "prompt" not in req and "raw_result" not in req

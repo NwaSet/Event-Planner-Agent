@@ -23,6 +23,8 @@ def normalize_arguments(values, properties):
         return values
     normalized = deepcopy(values)
     for key, value in normalized.items():
+        if key in ("sound_level", "light_level", "video_level") and isinstance(value, str):
+            value = tools.normalize_level(value)
         spec = properties.get(key, {})
         kind = spec.get("type")
         kind = kind[0] if isinstance(kind, list) else kind
@@ -80,7 +82,6 @@ def check_schedule(planning):
 def compatible(category, row, context):
     """Contraintes objectives qui ne figurent pas dans les filtres publics."""
     planning = context.get("planning")
-    venue = context.get("venue")
     if category == "venue" and planning:
         start, end = check_schedule(planning)
         # En l'absence de fin de musique distincte, la soirée musicale finit avec l'événement.
@@ -91,56 +92,23 @@ def compatible(category, row, context):
                 return False
         if context.get("music_required", True):
             deadline = datetime.combine(start.date(), datetime.strptime(
-                row["contraintes"]["heure_fin_musique"], "%H:%M").time())
+                row["heure_fin_musique"], "%H:%M").time())
             if deadline <= start:
                 deadline += timedelta(days=1)
             if end > deadline:
                 return False
-    if category in ("catering", "provider") and venue:
-        imposed, ids = (("traiteur_impose", "traiteurs_autorises_ids") if category == "catering"
-                        else ("prestataire_technique_impose", "prestataires_techniques_autorises_ids"))
-        if venue["contraintes"][imposed] and row["id"] not in venue["contraintes"][ids]:
-            return False
-    if category == "catering":
-        if (planning or context.get("date")) and context.get("today"):
-            start = check_schedule(planning)[0] if planning else datetime.fromisoformat(context["date"])
-            today = datetime.fromisoformat(context["today"]).date()
-            if (start.date() - today).days < row["reservation"]["delai_minimum_jours"]:
-                return False
-        if venue:
-            if not tools._contains(row["zones_intervention"], venue["lieux"]["province"]):
-                return False
-            for required, equipment in (("cuisine_sur_place_necessaire", "cuisine_traiteur"),
-                                        ("eau_potable_necessaire", "eau_potable"),
-                                        ("electricite_necessaire", "electricite")):
-                if row["logistique"][required] and not venue["equipements"].get(equipment):
-                    return False
-            if context.get("space_type") == "exterieur":
-                if not row["logistique"]["installation_exterieure_possible"]:
-                    return False
-                if (row["logistique"]["espace_couvert_obligatoire_en_exterieur"]
-                        and not venue["equipements"].get("espace_traiteur_couvert")):
-                    return False
     return True
 
 
 def project(category, row):
     """Garder prix, offres, critères qualitatifs et contraintes ; supprimer le superflu."""
     fields = {
-        "venue": ("id", "nom", "lieux", "type_lieu", "type_espace", "capacite", "prix",
-                  "types_evenements_adaptes", "types_evenements_interdits", "ambiance",
-                  "meteo", "equipements", "contraintes"),
-        "catering": ("id", "nom", "lieux", "zones_intervention", "styles_cuisine", "gamme",
-                     "types_evenements_adaptes", "formules", "options_alimentaires", "boissons",
-                     "frais_supplementaires", "logistique", "reservation"),
-        "provider": ("id", "nom", "lieux", "province", "categorie_taille", "profil_simulation",
-                     "kits", "deplacement"),
+        "venue": ("id", "nom", "lieux", "type_espace", "capacite", "prix",
+                  "types_evenements_adaptes", "equipements", "heure_fin_musique"),
+        "catering": ("id", "nom", "lieux", "types_evenements_adaptes", "formules", "options_alimentaires"),
+        "provider": ("id", "nom", "lieux", "province", "kits"),
     }
     result = {key: deepcopy(row[key]) for key in fields[category] if key in row}
-    # Description d'offre et gamme conservées pour permettre un véritable choix qualitatif.
-    if category == "catering":
-        for formula in result["formules"]:
-            formula.pop("nom", None)  # La description plus précise reste présente.
     return result
 
 
@@ -158,10 +126,6 @@ def search_candidates(category, filters=None, *, catalogs=None, context=None, ac
         venue = (context or {}).get("venue")
         if category in ("catering", "provider") and venue:
             cleaned["city"] = venue["lieux"]["commune"]
-            if category == "catering":
-                cleaned["province"] = venue["lieux"]["province"]
-            else:
-                cleaned.pop("province", None)
         matching_filters = {key: value for key, value in cleaned.items() if key != "city"}
         problem = event_type_error(cleaned.get("event_type"), (context or {}).get("request", ""))
         if problem:
@@ -177,8 +141,7 @@ def search_candidates(category, filters=None, *, catalogs=None, context=None, ac
                 continue
             if accept is not None and not accept(row):
                 continue
-            financial = (context or {}).get("financial", {})
-            if category == "venue" and not fits_budget(category, row, None, cleaned, financial):
+            if category == "venue" and not fits_budget(category, row, None, cleaned):
                 continue
             candidate = row
             offers_key = {"catering": "formules", "provider": "kits"}.get(category)
@@ -186,7 +149,7 @@ def search_candidates(category, filters=None, *, catalogs=None, context=None, ac
                 candidate = dict(row)
                 candidate[offers_key] = [offer for offer in row[offers_key]
                                         if matches({**row, offers_key: [offer]}, matching_filters)
-                                        and fits_budget(category, row, offer, cleaned, financial)]
+                                        and fits_budget(category, row, offer, cleaned)]
                 if not candidate[offers_key]:
                     continue
             candidates.append(project(category, candidate))

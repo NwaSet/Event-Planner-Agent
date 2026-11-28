@@ -89,13 +89,13 @@ def test_catalog_permission_error(function, filename, key, count, monkeypatch):
 
 def test_caterer_filters_on_real_catalog():
     rows = read_rows("caterers.json", "traiteurs")
-    expected = [r for r in rows if "Namur" in r["zones_intervention"]
+    expected = [r for r in rows if r["lieux"]["province"] == "Namur"
                 and "mariage" in r["types_evenements_adaptes"]
-                and r["options_alimentaires"]["vegan"]
+                and "vegan" in r["options_alimentaires"]
                 and any(f["repas_complet"] and f["type_service"] == "buffet"
-                        and f["minimum_personnes"] <= 100 <= f["maximum_personnes"]
+                        and 100 <= f["maximum_personnes"]
                         and f["prix_par_personne_ttc"] <= 50
-                        and 100 * f["prix_par_personne_ttc"] + r["frais_supplementaires"]["livraison_forfait_ttc"] <= 5000
+                        and 100 * f["prix_par_personne_ttc"] <= 5000
                         for f in r["formules"])]
     assert expected and len(expected) < len(rows)
     filters = dict(province=" namur ", event_type="Mariage", guests=100, full_meal=True,
@@ -124,9 +124,9 @@ def test_caterer_criteria_cannot_match_different_formulas(tmp_path, monkeypatch)
 
 def test_providers_budget_levels_and_absent_video():
     rows = read_rows("providers.json", "prestataires")
-    expected = [r for r in rows if any(k["prix_estime_eur_ht"] <= 3000
-                and k["son"] in ("bien", "trés bien", "exelent", "parfait")
-                and k["video"] == "null" for k in r["kits"])]
+    expected = [r for r in rows if any(k["prix_ttc"] <= 3000
+                and k["son"] in ("bon", "excellent")
+                and k["video"] == "absent" for k in r["kits"])]
     assert expected and len(expected) < len(rows)
     assert tools.get_providers(max_budget=3000, sound_level="bien", video_level="null", limit=None) == expected
     assert tools.get_providers(max_budget=3000, sound_level="bien", video_level="null", limit=1) == expected[:1]
@@ -137,11 +137,11 @@ def test_providers_budget_levels_and_absent_video():
 def test_provider_criteria_cannot_match_different_kits(tmp_path, monkeypatch):
     base = read_rows("providers.json", "prestataires")[0]
     split = copy.deepcopy(base)
-    split["kits"] = [dict(base["kits"][0], prix_estime_eur_ht=10, son="simple"),
-                     dict(base["kits"][1], prix_estime_eur_ht=1000, son="parfait")]
+    split["kits"] = [dict(base["kits"][0], prix_ttc=10, son="simple"),
+                     dict(base["kits"][1], prix_ttc=1000, son="parfait")]
     match = copy.deepcopy(split)
     match["id"] = "002"
-    match["kits"][1]["prix_estime_eur_ht"] = 50
+    match["kits"][1]["prix_ttc"] = 50
     monkeypatch.setattr(tools, "DATA_DIR", tmp_path)
     (tmp_path / "providers.json").write_text(json.dumps({"prestataires": [split, match]}), encoding="utf-8")
     assert tools.get_providers(max_budget=100, sound_level="bien") == [match]
@@ -152,54 +152,50 @@ def test_provider_city_matches_a_place_not_a_substring():
     assert [r["id"] for r in tools.get_providers(city="As", limit=None)] == ["006"]
 
 
-def test_provider_category_and_missing_province():
+def test_provider_explicit_province():
     rows = read_rows("providers.json", "prestataires")
-    target = next(r for r in rows if r.get("categorie_taille") and r.get("province") and "/" not in r["province"])
-    expected = [r for r in rows if r.get("categorie_taille") == target["categorie_taille"]
-                and r.get("province") == target["province"]]
+    target = next(r for r in rows if r.get("province") and "/" not in r["province"])
+    expected = [r for r in rows if target["province"] in r.get("province", "").split(" / ")]
     assert expected and len(expected) < len(rows)
     assert any("province" not in r for r in rows)
-    assert tools.get_providers(category=target["categorie_taille"], province=target["province"], limit=None) == expected
+    assert tools.get_providers(province=target["province"], limit=None) == expected
 
 
 def test_venue_capacity_budget_and_event_filters():
     rows = read_rows("venues.json", "salles")
     expected = [r for r in rows if "mariage" in r["types_evenements_adaptes"]
-                and "mariage" not in r["types_evenements_interdits"]
-                and r["capacite"]["interieur"]["personnes_assises"] >= 100
-                and r["capacite"]["maximum_personnes_sur_site"] >= 100
-                and r["prix"]["location_soiree_ttc"] + r["prix"]["nettoyage_obligatoire_ttc"] <= 4000]
+                and r["type_espace"] in ("interieur", "les deux")
+                and r["capacite"] >= 100
+                and r["prix"]["location_soiree_ttc"] <= 4000]
     assert expected and len(expected) < len(rows)
-    filters = dict(event_type="mariage", guests=100, seated=True, space_type="intérieur",
+    filters = dict(event_type="mariage", guests=100, space_type="intérieur",
                    max_budget=4000, rental_period="soirée")
     assert tools.get_venues(**filters, limit=None) == expected
     assert tools.get_venues(**filters, limit=1) == expected[:1]
-    assert tools.get_venues(seated=True, rental_period="soiree", limit=1) == rows
+    assert tools.get_venues(rental_period="soiree", limit=1) == rows
 
 
-def test_venue_no_capacity_summing_or_ignored_cleaning(tmp_path, monkeypatch):
+def test_venue_no_capacity_summing_or_ignored_price(tmp_path, monkeypatch):
     base = read_rows("venues.json", "salles")[0]
     too_small = copy.deepcopy(base)
+    too_small["capacite"] = 100
     fits = copy.deepcopy(base)
     fits["id"] = "fits"
-    fits["capacite"]["interieur"]["personnes_assises"] = 150
+    fits["capacite"] = 150
     too_expensive = copy.deepcopy(fits)
     too_expensive["id"] = "expensive"
-    too_expensive["prix"]["nettoyage_obligatoire_ttc"] = 1000
+    too_expensive["prix"]["location_journee_ttc"] = 3000
     rows = [too_small, fits, too_expensive]
     monkeypatch.setattr(tools, "DATA_DIR", tmp_path)
     (tmp_path / "venues.json").write_text(json.dumps({"salles": rows}), encoding="utf-8")
-    # First venue has 80 indoor + 112 outdoor seats, but cannot seat 150 in one space.
-    assert tools.get_venues(guests=150, seated=True, max_budget=2100) == [fits]
+    # The generic capacity, price and space are the only physical filters.
+    assert tools.get_venues(guests=150, max_budget=2100) == [fits]
 
 
-def test_venue_exclusivity_and_accent_matching():
+def test_venue_has_no_imposed_supplier_and_keeps_accent_matching():
     rows = read_rows("venues.json", "salles")
-    expected = [r for r in rows
-                if (not r["contraintes"]["traiteur_impose"] or "traiteur_001" in r["contraintes"]["traiteurs_autorises_ids"])
-                and (not r["contraintes"]["prestataire_technique_impose"] or "002" in r["contraintes"]["prestataires_techniques_autorises_ids"])]
-    assert expected and len(expected) < len(rows)
-    assert tools.get_venues(caterer_id="traiteur_001", provider_id="002", limit=None) == expected
+    assert all("contraintes" not in row for row in rows)
+    assert "provider_id" not in tools.SCHEMA_VENUES["function"]["parameters"]["properties"]
     liege = tools.get_venues(city=" LIEGE ", limit=None)
     assert 0 < len(liege) < len(rows)
     assert all(r["lieux"]["commune"] == "Liège" for r in liege)

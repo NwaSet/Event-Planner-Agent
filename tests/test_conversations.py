@@ -143,6 +143,7 @@ def test_controller_automatically_saves_all_outcomes(tmp_path, status, refusal, 
     if refusal == "plan":
         data["plan_approval"] = {"approved": False, "content": "Plan exact"}
     if refusal == "draft":
+        data["tasks"]["documents"] = {"status": "refused"}
         data["documents"] = [{"approved": False, "content": " \nRefus exact\t"}]
     orchestrator = SimpleNamespace(run=Mock(return_value=" \nRésultat exact\t"), event_data=data,
                                    event_details={"costs": {"known_ttc_subtotal": 0}}, last_status=status)

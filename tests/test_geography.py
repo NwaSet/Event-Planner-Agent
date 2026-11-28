@@ -83,7 +83,7 @@ def test_nearest_compatible_city_before_limit_and_without_relaxing_filters(overp
     for index, city in enumerate(["Liège", "Namur", "Dinant"]):
         row = copy.deepcopy(base)
         row.update(id=str(index), lieux={**row["lieux"], "commune": city})
-        row["capacite"]["maximum_personnes_sur_site"] = 10 if city == "Namur" else 100
+        row["capacite"] = 10 if city == "Namur" else 100
         rows.append(row)
     catalogs["venue"] = rows
     filters = {"city": "Namur", "guests": 80, "limit": 1}

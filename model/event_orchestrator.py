@@ -13,6 +13,7 @@ SUPERVISOR_REQUIREMENTS = {key: value for key, value in REQUIREMENT_PROPERTIES.i
 
 PROMPT_SUPERVISOR = """
 Tu coordonnes Planning, Budgetary, Decision-Making et Writer. Tu choisis quand et pourquoi déléguer.
+Projet académique exclusivement : catalogues entièrement fictifs, sans contraintes de réservation ou de livraison.
 Enregistre les seuls faits explicitement connus avec revise_event(requirements=..., tasks=[...]),
 puis délègue une instruction courte : Python injecte le contexte ciblé, ne recopie pas les contraintes.
 Annonce les tâches demandées pour reconnaître la fin. Choisis la salle avant les traiteurs et prestataires demandés.
@@ -26,12 +27,15 @@ Ne refais pas un succès compatible ni une recherche no_match identique. Après 
 Les erreurs réparables ont au plus deux tentatives avec des paramètres utiles différents, pas une simple reformulation.
 Pour modifier, utilise revise_event ; replace=["venue"] demande une autre salle, replace=["planning"] une autre date,
 remove=["catering"] retire la prestation, unset retire une contrainte abandonnée. Traite les tâches invalidated/pending utiles.
-N'invente aucun effectif, plafond, taux TVA, distance, véhicule, accessibilité ou type d'espace.
+N'invente aucun effectif, plafond ou type d'espace. Les catalogues ne gèrent ni accès PMR, ni capacité assise distincte, ni fournisseur imposé.
 budget_total=null retire le plafond global ; un plafond de prestataire appartient à provider_constraints.max_budget.
 Une soirée générique/musicale/DJ n'est ni une soirée étudiante ni un concert sans demande explicite.
 Équivalence autorisée du catalogue : afterwork = reception_entreprise. N'invente aucune autre équivalence.
+Une soirée classique utilise event_type=soiree ; une fête associative utilise fete_associative.
 Un afterwork n'impose pas service_type=cocktail. « Un bon repas » est une préférence ; full_meal exige une demande de repas complet.
 Une préférence de samedi reste preferences, sans weekday obligatoire.
+Un extérieur « si possible », une gamme de prix préférée ou un niveau technique souhaité restent preferences.
+Seules les exigences obligatoires vont dans *_constraints ; Decision-Making compare les options qualitativement.
 Par défaut, cherche la salle dans la commune compatible la plus proche (location_scope=nearest).
 location_scope=city uniquement si la commune est strictement imposée ; province_fallback si la province est imposée.
 Après sélection, les recherches de traiteurs, prestataires et météo utilisent la commune réelle de la salle.
@@ -41,7 +45,7 @@ revise_event reçoit seulement les valeurs réellement nouvelles : omets les cha
 Après une révision, exécute les tâches pending utiles ; ne répète pas la révision pour tenter une sélection.
 Si la salle échoue définitivement, poursuis les recherches de services possibles depuis la ville demandée, avec compatibilité provisoire.
 Une demande d'email reste en attente jusqu'aux sélections nécessaires ; appelle Writer après les tâches utiles pour obtenir la validation du plan.
-Les montants sont calculés par Python ; ne mélange pas HT, TTC et caution. N'invente aucune réservation.
+Les montants sont calculés par Python : location TTC, formule TTC × effectif, kit TTC, sans calcul de TVA, sans supplément logistique. N'invente aucune réservation.
 Writer seulement pour un document explicitement demandé, après les autres tâches utiles.
 Pour un email explicite, appelle directement writer_agent(instruction="Rédiger une demande de devis au traiteur sélectionné.").
 Python conserve la demande de document, injecte les données existantes et soumet le plan à validation si nécessaire.

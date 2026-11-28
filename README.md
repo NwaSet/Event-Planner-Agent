@@ -21,7 +21,7 @@
   - [C) Multi-Agent Workflow](#c-multi-agent-workflow)
 - [5. Agent Tools](#5-agent-tools)
 - [6. Data Management](#6-data-management)
-  - [providers.json](#providersjson)
+  - [Catalogues académiques](#champs-conservés-et-supprimés)
 - [7. Memory and Database](#7-memory-and-database)
 - [8. Streaming and User Interface](#8-streaming-and-user-interface)
   - [Expected communication flow](#expected-communication-flow)
@@ -39,7 +39,7 @@
 
 ## Description
 
-**Event-Planner-Agent** is a multi-agent AI system designed to help users plan and organize events in Wallonia, Belgium.
+**Event-Planner-Agent** is exclusively an academic demonstration of AI multi-agent orchestration, using entirely fictional event catalogues across Belgium. It will never be used to organize real events.
 
 The goal of this project is to simplify event planning by coordinating several specialized AI agents through a central orchestrator.
 
@@ -61,7 +61,7 @@ offers, using the Overpass/Haversine function adapted from `WIP/fonction.py` in 
 Set `OVERPASS_URL` in `.env` (the `/interpreter` suffix is added automatically), and optionally
 `OVERPASS_KEY` for the `X-API-Key` header. Distances are straight-line distances between commune
 centres, among locations resolved by Overpass; they are not driving distances or delivery costs.
-Capacity, budget, schedules and supplier restrictions remain mandatory. If no compatible offer
+Capacity, budget, schedules and explicitly requested equipment remain mandatory. If no compatible offer
 exists, the search returns no match; if geolocation fails, it returns an explicit error.
 
 After a venue is selected, caterer, technical provider and weather searches use its actual commune.
@@ -364,22 +364,62 @@ Before presenting venue candidates, Python checks that the requested catering an
 
 ## 6. Data Management
 
-The `data/` directory stores fictional information used by the agents.
+Les catalogues sont exclusivement fictifs. La simplification supplémentaire du **28 novembre 2026** retire les détails commerciaux inutiles, sans ajouter d'entrée ni changer d'identifiant.
 
-To Do
+| Catalogue | Entrées avant → après | Offres conservées |
+| --- | ---: | ---: |
+| `venues.json` | 150 → 150 | — |
+| `caterers.json` | 100 → 100 | 322 formules |
+| `providers.json` | 40 → 40 | 240 kits |
 
-### providers.json
+### Champs conservés et supprimés
 
-Contains information about event service providers, such as:
+**Salles :** ID, nom, commune/province, type d'espace, **une capacité entière**, deux tarifs TTC (journée/soirée), types d'événements compatibles, une courte liste d'équipements présents et `heure_fin_musique` directement dans la fiche. La capacité est désormais un plafond générique fictif, sans distinction assis/debout ou calcul de cumul entre espaces.
 
-- Company name
-- Service category
-- Location
-- Pricing
-- Capacity
-- Available services
+Les champs **PMR/accessibilité**, les capacités imbriquées, les fournisseurs imposés et le bloc `contraintes` ont disparu. Les équipements absents ne sont plus énumérés avec `false`. Le type de bâtiment, l'ambiance, la météo détaillée, la réservation, la logistique, les cautions et frais séparés ne sont pas utilisés. Les agents ne doivent pas inventer une garantie d'accessibilité ou un nombre de places assises.
 
-The data is fictional and intended for testing and demonstration.
+**Traiteurs :** ID, nom, commune/province, catégories compatibles, formules avec ID/nom/description/type de service/caractère complet/capacité/prix TTC par personne. Les options alimentaires sont une liste des options disponibles. Pas de délai, livraison, cuisine obligatoire, personnel, supplément ou zone d'intervention. Les formules sont prévues pour au moins 250 personnes ; leurs capacités maximales restent finies. Un cocktail apéritif reste `repas_complet=false` ; une demande de repas complet filtre les formules avant le choix du modèle.
+
+**Prestataires :** ID, nom, implantation(s), province lorsqu'elle est renseignée, kits avec ID/description/**`prix_ttc`** et niveaux `son`, `light`, `video`. Tous utilisent **absent < basique < standard < bon < excellent**. `absent` exige l'absence ; les autres niveaux sont des minimums. Les anciens termes techniques sont normalisés à l'entrée. Aucun fournisseur n'est imposé par une salle ; seuls des IDs explicitement demandés par l'utilisateur limitent la sélection.
+
+### Recherche et choix des agents
+
+144 salles acceptent les six catégories courantes : soirée, soirée étudiante, afterwork (`reception_entreprise`), anniversaire, mariage et fête associative. Six salles restent spécialisées en réceptions/calme. Les prix, capacités, espaces intérieurs/extérieurs, horaires musicaux et niveaux techniques maintiennent des choix intéressants.
+
+Les contraintes utiles sont : capacité suffisante, budget connu, équipement réellement obligatoire, type d'événement compatible, horaire musical et localisation explicitement demandée. Les préférences restent des critères qualitatifs, notamment « extérieur si possible ». Python ne sélectionne pas le premier résultat : Decision-Making compare les candidats et renvoie les IDs choisis.
+
+La fonction Overpass/Haversine de `model/geography.py` est inchangée : les villes viennent des candidats présents dans le JSON, et la commune compatible la plus proche est recherchée avant la limite d'affichage. Les traiteurs et prestataires peuvent venir d'une commune voisine, y compris d'une autre province. Aucune province d'intervention n'est injectée automatiquement ; une province explicitement imposée reste obligatoire. Les implantations multiples des prestataires restent utilisables par la fonction géographique existante.
+
+### Finances, Writer et conversations
+
+Tous les tarifs sont maintenant **TTC tout compris**, sans conversion ni supplément de TVA : location de salle, prix du repas × effectif, prix du kit. Les montants des kits sont des tarifs finaux fictifs ; il ne s'agit pas d'une conversion fiscale de tarifs réels. Le bilan additionne directement les trois catégories. Seuls un effectif de repas manquant ou une période de location non précisée peuvent rendre le chiffrage incomplet.
+
+Les anciens paramètres PMR, assis/debout, fournisseur imposé par la salle, kilomètres, véhicules et TVA sont retirés des exigences à la reprise. Les anciennes formes de montants de caution/livraison restent à zéro pour les lecteurs existants, sans réintroduire de frais. Les filtres `accessible`, `seated`, `provider_id`, `venue_type`, `caterer_id`, `cuisine`, `category` et `setup_size` ne sont plus exposés aux agents. Les anciens filtres non vides sans équivalent, comme un style de cuisine, doivent être révisés explicitement.
+
+Writer reçoit les seuls champs conservés, l'offre exacte et son prix TTC. Les messages, documents approuvés et JSON sauvegardés ne sont pas réécrits. Les IDs de salles, traiteurs, prestataires, formules et kits sont tous conservés ; une reprise utilise les tarifs actuels. Les cinq agents, ReAct, `Agent.as_tool()`, le DAO JSON et les validations distinctes du plan puis du brouillon restent en place. Aucun email n'est envoyé.
+
+### Tests et cohérence des catalogues
+
+**578 tests réussis**, sans réseau ni LLM réel/payant. Les dix scénarios demandés restent couverts : les neuf scénarios courants offrent plusieurs candidats par catégorie, tandis qu'un million de personnes produit un `no_match` réel pour la salle et le repas. Exemples avant la limite d'affichage :
+
+| Scénario | Salles | Traiteurs | Prestataires |
+| --- | ---: | ---: | ---: |
+| Soirée à Namur, 100 personnes | 7 | 5 | 2 |
+| Soirée étudiante à Namur, 200 personnes | 4 | 5 | 2 |
+| Afterwork à Anvers, 100 personnes | 7 | 5 | 2 |
+| Mariage à Namur, 150 personnes | 6 | 5 | 2 |
+| Plafonds salle 2 000 €, repas 3 500 €, kit 1 500 € TTC | 3 | 4 | 2 |
+| Repas complet obligatoire à Namur, 100 personnes | 7 | 5 | 2 |
+| Son excellent obligatoire à Namur | 7 | 5 | 2 |
+
+`tests/test_catalog_integrity.py` contrôle l'unicité des IDs, les prix positifs au centime, les capacités, les champs autorisés, les listes d'équipements/options, le lien cocktail/repas complet, les niveaux techniques, les descriptions « sans vidéo/son/éclairage », les provinces des communes partagées et la reprise sans anciens paramètres bloquants. Les tests géographiques conservent les recherches voisines. `tests/test_academic_catalogs.py` vérifie les dix scénarios et le parcours complet des cinq agents : budget de 7 000 €, choix autre que le premier candidat, sauvegarde/rechargement, validation du plan puis du brouillon exact.
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/test_catalog_integrity.py tests/test_academic_catalogs.py -q -p no:cacheprovider
+.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider
+```
+
+Les réponses LLM et le géocodage sont simulés ; ces tests vérifient les données, contrats et interactions, sans mesurer la qualité d'un modèle réel.
 
 ---
 
@@ -389,15 +429,15 @@ Each turn creates an `EventRun` with fresh call/delegation limits and optionally
 
 The Supervisor receives the initial request (up to 4,000 characters), current constraints, valid decisions, calculated costs, the pending question and at most four recent messages (1,200 characters each). Full user-facing history remains in JSON for consultation; specialist prompts and observations are not replayed. `clarify(question)` saves one pending clarification and ends the turn. Its answer is provided to the Supervisor on the next message.
 
-For explicit changes, the Supervisor calls `revise_event`: updated `requirements`, `replace` for another proposal, `remove` for a cancelled service, or `unset` for an abandoned constraint. Python rechecks capacity, offer suitability, schedules, allocations and venue-imposed suppliers. Compatible selections remain; incompatible selections are archived and marked pending for the appropriate specialist. Budgetary revises allocations when the ceiling changes, and Planning receives the previous schedule when moving the event. Each material change invalidates current approvals and archives documents with their original text, approval and revision. Archived documents are not presented as approved for the new plan.
+For explicit changes, the Supervisor calls `revise_event`: updated `requirements`, `replace` for another proposal, `remove` for a cancelled service, or `unset` for an abandoned constraint. Python rechecks capacity, offer suitability, schedules and allocations. Venues impose no supplier. Compatible selections remain; incompatible selections are archived and marked pending for the appropriate specialist. Budgetary revises allocations when the ceiling changes, and Planning receives the previous schedule when moving the event. Each material change invalidates current approvals and archives documents with their original text, approval and revision. Archived documents are not presented as approved for the new plan.
 
 The Supervisor directly calls `planning_agent(demande=...)`, `budgetary_agent(demande=...)`, `decision_making_agent(demande=..., category=...)` or `writer_agent(demande=...)`. The mandatory `configure_event` tool has been removed. Each delegation can optionally supply `requirements` with only new known constraints, and `tasks` to announce the requested scope. Neither is required to start. Python preserves the original request and injects only relevant earlier decisions. Without prepared candidates, Decision-Making uses its category's search tool before returning IDs.
 
-Preferences use a text format; dictionary input is normalized to compact JSON text without losing information. They remain soft wishes, separate from mandatory event type, headcount, budget and schedule. Explicit student-party wording is preserved as `soiree_etudiante`. Searches apply mandatory constraints before limiting results and expose the applied filters and truncation. Catalogue order is not a qualitative ranking. A refined search replaces earlier selectable candidates. In the current data, all seven Namur venues forbid student parties: the correct result is an explicit venue conflict, while independent catering/provider research can continue.
+Preferences use a text format; dictionary input is normalized to compact JSON text without losing information. They remain soft wishes, separate from mandatory event type, headcount, budget and schedule. Explicit student-party wording is preserved as `soiree_etudiante`. Searches apply mandatory constraints before limiting results and expose the applied filters and truncation. Catalogue order is not a qualitative ranking. A refined search replaces earlier selectable candidates. The academic catalogues provide several compatible candidates for common events, including student parties in Namur. Impossible strict constraints still produce an explicit conflict, while independent service research can continue.
 
 An announced task list allows automatic stopping when all requested tasks are terminal; without it, the Supervisor can keep delegating and then finish naturally. Empty results never count as a successful event. A known limited budget requires Budgetary's allocation before selections; unknown or unlimited budgets need no allocation. A missing catering headcount can fail that task without blocking a venue recommendation. Errors do not cascade to independent tasks.
 
-The controller persists every turn in the same conversation file, keeping its ID, title and creation date. Opening alone is read-only; submitting a message resumes the saved event. Before releasing catalogue references, the Supervisor captures `event_details`: selected names, offers and calculated financial details. The controller saves this snapshot alongside `event_data`, without duplicating full catalogues or private agent histories. Technical usage logs remain separate.
+The controller persists every turn in the same conversation file, keeping its ID, title and creation date. Opening alone is read-only; submitting a message resumes the saved event. Selected IDs and offer IDs remain in `event_data`; the displayed names and amounts remain in saved messages. The current Supervisor leaves `event_details` empty rather than duplicating catalogue rows. Older snapshots, when present, remain readable. Writer reconstructs only the selected rows and offers from their stable IDs. Technical usage logs remain separate.
 
 ### Local conversation format and DAO
 
@@ -426,7 +466,7 @@ The empty objects above stand for the actual saved data, without filling in miss
 
 - `messages`: successive user messages and assistant responses, including whitespace; user-facing history only.
 - `event_data`: original request, requirements, dates, budget allocation, selected IDs, documents, task errors, human approvals, weather observations and geographic fallback state, as available from the run. IDs such as `"002"` remain strings; numeric kit IDs remain numbers.
-- `event_details`: `venue`, `catering`, `providers` and `costs` snapshots captured during execution, so historical names, offers and prices do not depend on later catalogue changes. If the snapshot cannot be built, an `unavailable` explanation is stored; the original decisions and response remain available.
+- `event_details`: optional legacy snapshots, preserved when reading older files; current turns leave this object empty. Historical responses remain available in `messages`. Resuming a selection uses the current catalogue prices.
 - Status: `running`, `completed`, `partial`, `refused`, `error`, `interrupted` or `waiting`. A human refusal is distinguished from a technical failure; its exact plan/draft and approval status remain in `event_data`.
 
 Optional event fields include `pending_input` (`clarification`, `plan_approval` or `email_approval`), `revision`, `document_archive`, `approval_archive`, `decision_archive` and effective `selection_filters`. The JSON envelope stays at version 1. Older saves remain readable without rewriting; missing event fields receive defaults when the next turn starts.
@@ -481,9 +521,9 @@ result = supervisor.run("Organise une soirée à Namur sans limite de budget.")
 
 One correction is allowed for an invalid structured answer. Provider errors, `content_filter` and explicit refusals are distinguished from invalid JSON and are not repaired by reprompting. Identical `tool_use_failed` requests are not retried. Completed actions use the checked Python summary without a redundant synthesis call. In conversation mode, a direct Supervisor answer without actions is retained. Standalone specialists retain their final turn when necessary, within the shared budget. On leaving the menu, CLI exit codes reflect the last interaction: `0` for success, a pending human answer or consultation only; `2` for a partial/refused result; `1` for configuration/execution/storage failure; and `130` for interruption.
 
-The user summary displays local dates and times, venue and supplier names, offer descriptions, calculated amounts and unresolved tasks. Venue exclusivities are shown as authorized supplier names instead of a JSON object. Internal IDs remain in `event_data`; missing catalogue references are explicitly marked for verification. Availability and incomplete pricing remain conditional.
+The user summary displays local dates and times, venue and supplier names, offer descriptions, calculated amounts and unresolved tasks. Venues have no supplier exclusivity or accessibility rules. Internal IDs remain in `event_data`; missing catalogue references are explicitly marked for verification. Availability and incomplete pricing remain conditional.
 
-The existing positional calls `Agent.run(request)` and `Agent.as_tool(name, description)` remain valid. Optional keyword arguments connect validation, shared counters and completion checks. Decision-Making delegation now requires `category` (`venue`, `catering`, `provider`) alongside `demande`; all public catalogue function signatures are unchanged.
+The existing positional calls `Agent.run(request)` and `Agent.as_tool(name, description)` remain valid. Optional keyword arguments connect validation, shared counters and completion checks. Decision-Making delegation now requires `category` (`venue`, `catering`, `provider`) alongside `demande`; catalogue filters now match the simplified fields documented above.
 
 ---
 
@@ -618,7 +658,7 @@ Current design limitations include:
 - Reservations and email sending are not automated.
 - Human validation is required before finalizing email drafts.
 
-The catalogue cannot confirm availability. Provider kit prices are HT, while venue and catering prices are TTC; travel, VAT, drinks and extra staff may remain unpriced. The system reports known amounts and never certifies a complete final cost from those partial data. Unsupported constraints and the interpretation of natural language still rely on the Supervisor; qualitative selection remains an LLM task.
+The catalogue cannot confirm availability. All catalogue prices are fictitious final TTC prices, with no travel or VAT supplement. Totals use the selected venue tariff, meal headcount and technical kit price. Unsupported constraints and the interpretation of natural language still rely on the Supervisor; qualitative selection remains an LLM task.
 
 Run all tests without paid calls:
 

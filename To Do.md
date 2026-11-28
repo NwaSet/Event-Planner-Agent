@@ -1,3 +1,58 @@
+## Simplification supplémentaire — 28 novembre 2026
+
+**État actuel :** cette section et le README remplacent les descriptions des versions précédentes conservées ci-dessous.
+
+- [x] Retirer PMR/accessibilité, distinctions assis/debout, capacités imbriquées et tous les fournisseurs imposés des salles.
+- [x] Réduire les salles à neuf champs : ID, nom, localisation, type d'espace, capacité entière, prix, événements compatibles, liste d'équipements présents et fin de musique. Aucun bloc `contraintes`.
+- [x] Transformer les options alimentaires en listes simples, sans longues séries de booléens.
+- [x] Uniformiser tous les tarifs en **TTC fictif tout compris**, y compris les kits (`prix_ttc`). Supprimer les vérifications et calculs de TVA ; aucun supplément logistique. Adapter le bilan et Writer.
+- [x] Conserver **150 salles, 100 traiteurs, 40 prestataires, 322 formules, 240 kits**, avec tous les IDs inchangés. Aucune base supplémentaire.
+- [x] Conserver les capacités, budgets, équipements obligatoires, espaces, types d'événements et horaires utiles. Garder quelques salles spécifiques, sans couplage entre fournisseurs.
+- [x] Préserver la recherche géographique, les cinq agents, ReAct, `Agent.as_tool()`, les conversations et les deux validations humaines.
+- [x] Contrôler la cohérence des trois JSON : IDs uniques, prix positifs au centime, capacités valides, formules apéritives/non complètes, options vegan/végétarien, niveaux techniques communs, descriptions d'absence de service, provinces cohérentes pour les communes partagées.
+- [x] Tester la reprise d'un ancien état contenant PMR, places assises, fournisseur imposé et TVA : paramètres retirés en mémoire, IDs conservés, sauvegarde d'origine non modifiée.
+- [x] Adapter les tests de restrictions supprimées en tests de choix libre, de contrainte utilisateur explicite et de prix final TTC. Les scénarios usuels gardent plusieurs candidats et le cas impossible reste `no_match`.
+- [x] **578 tests réussis**, réseau bloqué et LLM simulés exclusivement. Aucun LLM payant. Parcours complet de 7 000 € jusqu'au brouillon approuvé vérifié. `git diff --check` sans erreur.
+
+Commandes :
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/test_catalog_integrity.py tests/test_academic_catalogs.py -q -p no:cacheprovider
+.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider
+```
+
+Les anciens messages et fichiers de conversations ne sont pas réécrits. Les prix sont fictifs : la reprise utilise les nouveaux montants TTC, sans leur ajouter un ancien taux de TVA. Les agents ne promettent plus d'accès PMR ni de capacité assise distincte, puisque ces informations n'existent plus.
+
+---
+
+## Simplification académique des catalogues — 27 novembre 2026
+
+Cette section décrit l'état actuel. Les audits datés ci-dessous décrivent les anciennes versions ; leurs listes d'interdictions, délais de réservation, frais et nombres de candidats ne s'appliquent plus aux catalogues simplifiés.
+
+- [x] Confirmer le périmètre exclusivement académique et fictif dans le README et les métadonnées JSON.
+- [x] Conserver **150 → 150 salles, 100 → 100 traiteurs, 40 → 40 prestataires**, ainsi que **322 → 322 formules et 240 → 240 kits**. Comparaison avec `HEAD` : tous les IDs et leurs types sont identiques, y compris les zéros initiaux.
+- [x] Réduire les salles aux lieux, capacités, espaces, types compatibles, prix, équipements principaux, horaire musical et éventuels prestataires techniques imposés. Retirer ambiance, météo détaillée, type de bâtiment, interdictions, caution, frais séparés, équipements logistiques et exclusivités traiteur. **144 salles polyvalentes, six spécialisées, sept avec prestataires techniques imposés.**
+- [x] Retirer réservation, logistique, zones d'intervention, livraison, kilomètres, boissons, personnel, vaisselle, durée et minimum de convives des traiteurs. Conserver le prix, le type, la description et le caractère complet de chaque formule ; capacité maximale d'au moins 250 personnes, options alimentaires et catégories courantes.
+- [x] Uniformiser les kits : **absent, basique, standard, bon, excellent**. Supprimer adresse, déplacement, taille du fournisseur/montage et profil commercial. Conserver des offres spécialisées et une gamme de prix. Deux prestataires locaux à Anvers via la relocalisation de l'entrée fictive `035` ; deux prestataires à son excellent à Namur via le kit 6 de `030`.
+- [x] Préserver Overpass/Haversine, ses fonctions et les implantations dans plusieurs régions belges. Retirer l'injection automatique de la province pour les traiteurs ; conserver les provinces explicitement imposées. Vérifier un voisinage interprovincial simulé.
+- [x] Adapter schémas/outils, projection Decision-Making, finances, reconstruction Writer et bilan. Location TTC tout compris, formule TTC × effectif, kit HT avec TVA seulement si fournie ; aucun supplément logistique ni contrôle des champs supprimés. Les anciens kilomètres/véhicules sont ignorés à la reprise ; les formes financières historiques restent disponibles avec frais nuls.
+- [x] Préserver les contraintes strictes et la sélection qualitative par le LLM. Ajouter `equipment` pour les équipements réellement obligatoires. Préserver une préférence extérieure souple, même transmise dans un filtre imbriqué. Interdire la substitution d'un repas complet par un apéritif.
+- [x] Vérifier les dix scénarios demandés dans `tests/test_academic_catalogs.py` : les neuf scénarios courants ont au moins deux candidats par catégorie ; le dixième produit `no_match` pour un million de personnes. À Namur : soirée de 100 personnes **7 salles / 5 traiteurs / 2 prestataires**, soirée étudiante de 200 personnes **4 / 5 / 2**. Tableau complet et champs précis dans [README.md](README.md#6-data-management).
+- [x] Vérifier le vrai code des **cinq agents**, ReAct et `Agent.as_tool()` avec des réponses LLM simulées : choix volontaire d'un candidat autre que le premier, budget de 7 000 € avec TVA fournie, Writer sur la formule retenue, validation humaine du plan puis du brouillon exact, sauvegarde et rechargement des IDs. Aucun email envoyé.
+- [x] Adapter les régressions aux nouveaux catalogues. Vérifier dans une copie séparée le dépôt initial : **549 réussites et cinq échecs préexistants**. Corriger ces cinq fixtures/assertions devenues obsolètes (statut du refus de brouillon, nouveau tour, destinataire explicite, budget connu, texte du bilan), sans refonte de l'orchestrateur.
+- [x] Validation finale : **568 tests réussis**, dont **16 nouveaux tests académiques**, réseau bloqué, aucun appel LLM réel ou payant. `git diff --check` sans erreur. Conversations personnelles et fichiers de logs historiques non modifiés.
+
+Commandes exécutées :
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/test_academic_catalogs.py -q -p no:cacheprovider
+.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider
+```
+
+La qualité d'un choix généré par un véritable modèle n'est pas mesurée par ces simulations. Les anciens messages restent lisibles ; une reprise utilise les tarifs actuels. Les anciennes exigences non vides portant sur un filtre retiré doivent être révisées explicitement. Les anciens échecs sauvegardés peuvent être relancés avec `revise_event(replace=["venue"])` ; aucun historique n'est réécrit automatiquement.
+
+---
+
 # To Do — Event-Planner-Agent
 
 ## Afterwork : sélection et achèvement du parcours — 27 novembre 2026

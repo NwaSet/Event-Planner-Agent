@@ -158,7 +158,7 @@ def test_pending_plan_approval_still_stops_before_later_revision(monkeypatch):
         call("revise_event", requirements={"guests": 150})))
     monkeypatch.setattr(agent_module, "chat", chat)
     supervisor = create_orchestrator()
-    supervisor.run("Rédige un email pour un événement de 100 personnes", interactive=True)
+    supervisor.run("Rédige un email aux invités pour un événement de 100 personnes", interactive=True)
     assert chat.call_count == 1
     assert supervisor.event_data["workflow"]["pending_input"]["kind"] == "plan_approval"
     assert supervisor.event_data["requirements"].get("guests") != 150

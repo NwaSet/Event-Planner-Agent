@@ -35,7 +35,9 @@ def _contains(values, expected):
 def normalize_event_type(value):
     """Équivalences métier explicites ; aucune assimilation d'une soirée à un concert."""
     normalized = _normalize(value).replace(" ", "_")
-    return {"afterwork": "reception_entreprise", "after_work": "reception_entreprise"}.get(normalized, normalized)
+    return {"afterwork": "reception_entreprise", "after_work": "reception_entreprise",
+            "soiree_classique": "soiree", "soiree_musicale": "soiree",
+            "soiree_electronique": "soiree"}.get(normalized, normalized)
 
 
 def _read_catalog(filename, key):
@@ -65,6 +67,8 @@ def _validate_filters(filters, schema):
         if value is None:
             continue
         spec = properties[name]
+        if name in ("sound_level", "light_level", "video_level") and isinstance(value, str):
+            value = normalize_level(value)
         kind = spec["type"][0]
         valid = False
         if kind == "string":
@@ -149,8 +153,6 @@ def _common_match(row, filters):
         event_type = normalize_event_type(filters["event_type"])
         if event_type not in [normalize_event_type(value) for value in row["types_evenements_adaptes"]]:
             return False
-        if event_type in [normalize_event_type(value) for value in row.get("types_evenements_interdits", [])]:
-            return False
     return True
 
 
@@ -159,13 +161,10 @@ def _caterer_match(row, filters):
         return False
     if "city" in filters and not _contains([row["lieux"]["commune"]], filters["city"]):
         return False
-    if "province" in filters and not _contains(row["zones_intervention"], filters["province"]):
-        return False
-    if "cuisine" in filters and not _contains(row["styles_cuisine"], filters["cuisine"]):
+    if "province" in filters and not _contains([row["lieux"]["province"]], filters["province"]):
         return False
     for option in filters.get("dietary_options", []):
-        if not any(_normalize(key) == _normalize(option) and value is True
-                   for key, value in row["options_alimentaires"].items()):
+        if not _contains(row["options_alimentaires"], option):
             return False
 
     def formula_matches(formula):
@@ -173,13 +172,13 @@ def _caterer_match(row, filters):
             return False
         if "full_meal" in filters and formula["repas_complet"] != filters["full_meal"]:
             return False
-        if "guests" in filters and not formula["minimum_personnes"] <= filters["guests"] <= formula["maximum_personnes"]:
+        if "guests" in filters and filters["guests"] > formula["maximum_personnes"]:
             return False
         price = formula["prix_par_personne_ttc"]
         if "max_price_per_person" in filters and price > filters["max_price_per_person"]:
             return False
         if "max_budget" in filters:
-            total = price * filters["guests"] + row["frais_supplementaires"]["livraison_forfait_ttc"]
+            total = price * filters["guests"]
             if total > filters["max_budget"]:
                 return False
         return True
@@ -191,24 +190,31 @@ def get_caterers(city: str | None = None, province: str | None = None,
                  event_type: str | None = None, guests: int | None = None,
                  max_price_per_person: float | None = None, max_budget: float | None = None,
                  service_type: str | None = None, full_meal: bool | None = None,
-                 cuisine: str | None = None, dietary_options: list[str] | None = None,
+                 dietary_options: list[str] | None = None,
                  ids: list[str] | None = None, limit: int | None = 5) -> list[dict] | dict:
-    """Match a single formula; budget is TTC food + delivery, before variable extras."""
+    """Match a single formula; academic TTC price is unit price times headcount."""
     return _search("caterers.json", "traiteurs", locals(), SCHEMA_CATERERS, _caterer_match)
 
 
-# The catalogue's spelling is intentional. 'null' means absent, not unknown.
-LEVELS = ["trés nul", "simple", "normal", "bien", "trés bien", "exelent", "parfait"]
-SETUP_SIZES = ["trés petit", "petit", "normal", "grand", "trés grand", "geant"]
+LEVELS = ["absent", "basique", "standard", "bon", "excellent"]
+# Preserve requests from saved conversations while exposing only the common scale.
+LEVEL_ALIASES = {"null": "absent", "tres nul": "basique", "simple": "basique",
+                 "normal": "standard", "bien": "bon", "tres bien": "excellent",
+                 "tres bon": "excellent", "exelent": "excellent", "parfait": "excellent"}
+
+
+def normalize_level(value):
+    value = _normalize(value)
+    return LEVEL_ALIASES.get(value, value)
 
 
 def _level_matches(actual, requested):
     if actual is None:
         return False
-    if _normalize(requested) == "null":
-        return actual == "null"
-    levels = [_normalize(level) for level in LEVELS]
-    return _normalize(actual) in levels and levels.index(_normalize(actual)) >= levels.index(_normalize(requested))
+    actual, requested = normalize_level(actual), normalize_level(requested)
+    if requested == "absent":
+        return actual == "absent"
+    return actual in LEVELS and requested in LEVELS and LEVELS.index(actual) >= LEVELS.index(requested)
 
 
 def _provider_match(row, filters):
@@ -220,13 +226,9 @@ def _provider_match(row, filters):
             pattern = r"(?<!\w)" + re.escape(_normalize(filters[parameter])) + r"(?!\w)"
             if not isinstance(value, str) or not re.search(pattern, _normalize(value)):
                 return False
-    if "category" in filters and not _contains([row.get("categorie_taille", "")], filters["category"]):
-        return False
 
     def kit_matches(kit):
-        if "max_budget" in filters and kit["prix_estime_eur_ht"] > filters["max_budget"]:
-            return False
-        if "setup_size" in filters and not _contains([kit["taille_montage"]], filters["setup_size"]):
+        if "max_budget" in filters and kit["prix_ttc"] > filters["max_budget"]:
             return False
         for parameter, field in (("sound_level", "son"), ("light_level", "light"), ("video_level", "video")):
             if parameter in filters and not _level_matches(kit[field], filters[parameter]):
@@ -237,11 +239,11 @@ def _provider_match(row, filters):
 
 
 def get_providers(city: str | None = None, province: str | None = None,
-                  category: str | None = None, max_budget: float | None = None,
+                  max_budget: float | None = None,
                   sound_level: str | None = None, light_level: str | None = None,
-                  video_level: str | None = None, setup_size: str | None = None,
+                  video_level: str | None = None,
                   ids: list[str] | None = None, limit: int | None = 5) -> list[dict] | dict:
-    """Match all technical requirements on one kit, with its estimated HT price."""
+    """Match all technical requirements on one kit, with its all-inclusive TTC price."""
     return _search("providers.json", "prestataires", locals(), SCHEMA_PROVIDERS, _provider_match)
 
 
@@ -251,45 +253,29 @@ def _venue_match(row, filters):
     for parameter, field in (("city", "commune"), ("province", "province")):
         if parameter in filters and not _contains([row["lieux"][field]], filters[parameter]):
             return False
-    if "venue_type" in filters and not _contains([row["type_lieu"]], filters["venue_type"]):
-        return False
     space = _normalize(filters.get("space_type", "les deux"))
     if "space_type" in filters and _normalize(row["type_espace"]) not in (space, "les deux"):
         return False
-    if "guests" in filters:
-        capacity = row["capacite"]["maximum_personnes_sur_site"]
-        if "seated" in filters or "space_type" in filters:
-            key = "personnes_assises" if filters.get("seated") else "personnes_debout"
-            spaces = ("interieur", "exterieur") if space == "les deux" else (space,)
-            capacity = min(capacity, max(row["capacite"][s][key] for s in spaces))
-        if capacity < filters["guests"]:
-            return False
+    if "guests" in filters and row["capacite"] < filters["guests"]:
+        return False
     if "max_budget" in filters:
         period = _normalize(filters.get("rental_period", "journee"))
-        price = row["prix"][f"location_{period}_ttc"] + row["prix"]["nettoyage_obligatoire_ttc"]
+        price = row["prix"][f"location_{period}_ttc"]
         if price > filters["max_budget"]:
             return False
-    if "accessible" in filters and row["equipements"]["acces_pmr"] != filters["accessible"]:
+    if any(not _contains(row["equipements"], equipment) for equipment in filters.get("equipment", [])):
         return False
-    for parameter, imposed, allowed in (
-        ("caterer_id", "traiteur_impose", "traiteurs_autorises_ids"),
-        ("provider_id", "prestataire_technique_impose", "prestataires_techniques_autorises_ids"),
-    ):
-        if parameter in filters and row["contraintes"][imposed] and filters[parameter] not in row["contraintes"][allowed]:
-            return False
     return True
 
 
 def get_venues(city: str | None = None, province: str | None = None,
                event_type: str | None = None, guests: int | None = None,
                max_budget: float | None = None, rental_period: str | None = None,
-               venue_type: str | None = None, space_type: str | None = None,
-               seated: bool | None = None, accessible: bool | None = None,
-               caterer_id: str | None = None, provider_id: str | None = None,
+               space_type: str | None = None, equipment: list[str] | None = None,
                ids: list[str] | None = None, limit: int | None = 5) -> list[dict] | dict:
-    """Budget includes rental + mandatory cleaning, excluding refundable deposit."""
+    """Academic rental price includes all venue costs."""
     return _search("venues.json", "salles", locals(), SCHEMA_VENUES, _venue_match,
-                   modifiers=("rental_period", "seated"))
+                   modifiers=("rental_period",))
 
 
 def ask_user(message: str) -> dict:
@@ -432,13 +418,12 @@ _FALLBACK = " Fiches originales complètes. Sans filtre exploitable ou filtre in
 
 SCHEMA_CATERERS = tool_schema("get_caterers", "Recherche les traiteurs ; tous les critères de formule doivent correspondre à une même formule." + _FALLBACK, {
     "city": _CITY,
-    "province": _optional("string", "Province de l'événement, à rechercher dans zones_intervention."),
+    "province": _optional("string", "Province d'implantation, seulement si explicitement imposée."),
     "event_type": _EVENT, "guests": _GUESTS,
     "max_price_per_person": _optional("number", "Plafond TTC par personne pour la formule seule.", minimum=0),
-    "max_budget": _optional("number", "Plafond TTC formule × guests + livraison. Nécessite guests. Hors boissons, personnel supplémentaire et kilomètres, à vérifier séparément.", minimum=0),
+    "max_budget": _optional("number", "Plafond TTC formule × guests, sans supplément logistique. Nécessite guests.", minimum=0),
     "service_type": _optional("string", "Type de service.", enum=["cocktail", "buffet", "service_a_table", "food_truck", "barbecue"]),
     "full_meal": _optional("boolean", "Exiger (true) ou exclure (false) une formule repas complet."),
-    "cuisine": _optional("string", "Style de cuisine, par exemple belge ou vegetale."),
     "dietary_options": _optional("array", "Toutes les options requises : vegan, vegetarien, sans_gluten, sans_lactose, halal, casher, etc.", items={"type": "string"}),
     "ids": _IDS, "limit": _LIMIT,
 }, requis=[])
@@ -446,25 +431,19 @@ SCHEMA_CATERERS = tool_schema("get_caterers", "Recherche les traiteurs ; tous le
 SCHEMA_PROVIDERS = tool_schema("get_providers", "Recherche des prestataires techniques ; tous les critères doivent correspondre à un même kit." + _FALLBACK, {
     "city": _CITY,
     "province": _optional("string", "Province d'implantation ; les fiches sans province ne correspondent pas."),
-    "category": _optional("string", "Catégorie de taille renseignée.", enum=["micro", "petite", "moyenne", "grande"]),
-    "max_budget": _optional("number", "Plafond du prix estimé du kit en EUR HT, hors déplacement et TVA.", minimum=0),
-    **{name: _optional("string", "Niveau minimum du kit selon le référentiel. Chaîne 'null' = prestation absente ; null JSON = pas de filtre.", enum=["null", *LEVELS])
+    "max_budget": _optional("number", "Plafond du kit en EUR TTC tout compris.", minimum=0),
+    **{name: _optional("string", "Niveau minimum : absent, basique, standard, bon, excellent. Absent exige l'absence ; null JSON = pas de filtre.", enum=LEVELS)
        for name in ("sound_level", "light_level", "video_level")},
-    "setup_size": _optional("string", "Taille exacte de montage.", enum=SETUP_SIZES),
     "ids": _IDS, "limit": _LIMIT,
 }, requis=[])
 
-SCHEMA_VENUES = tool_schema("get_venues", "Recherche les salles adaptées avec capacités et exclusivités commerciales." + _FALLBACK, {
+SCHEMA_VENUES = tool_schema("get_venues", "Recherche les salles fictives par capacité, prix et espace, sans exclusivité fournisseur." + _FALLBACK, {
     "city": _CITY, "province": _optional("string", "Province de la salle."),
     "event_type": _EVENT, "guests": _GUESTS,
-    "max_budget": _optional("number", "Plafond EUR TTC location + nettoyage obligatoire, hors caution remboursable.", minimum=0),
+    "max_budget": _optional("number", "Plafond EUR TTC de location, sans supplément.", minimum=0),
     "rental_period": _optional("string", "Tarif à utiliser ; journee par défaut.", enum=["journee", "soiree"]),
-    "venue_type": _optional("string", "Type de lieu, par exemple domaine, chateau, loft ou salle_polyvalente."),
+    "equipment": _optional("array", "Équipements obligatoires seulement : bar, piste_de_danse, sonorisation_incluse, eclairage_festif_inclus, videoprojecteur.", items={"type": "string"}),
     "space_type": _optional("string", "Espace requis. Les lieux mixtes acceptent intérieur ou extérieur.", enum=["interieur", "exterieur", "les deux"]),
-    "seated": _optional("boolean", "Capacité assise si true, debout si false. Sans précision : maximum sur site. Jamais de cumul intérieur/extérieur."),
-    "accessible": _optional("boolean", "Valeur requise pour acces_pmr."),
-    "caterer_id": _optional("string", "Traiteur choisi : vérifier les exclusivités de la salle."),
-    "provider_id": _optional("string", "Prestataire choisi : vérifier les exclusivités (identifiant exact, ex. 001)."),
     "ids": _IDS, "limit": _LIMIT,
 }, requis=[])
 

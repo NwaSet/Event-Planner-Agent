@@ -1,120 +1,72 @@
 {
   "meta": {
-    "usage": "Projet scolaire",
-    "date_recherche": "2026-10-18",
-    "nombre_prestataires": 40,
-    "nombre_kits": 240,
-    "exhaustif": false,
-    "donnees_factuelles": [
-      "nom",
-      "lieux",
-      "province",
-      "taille_publiee"
-    ],
-    "donnees_fictives": [
-      "kits",
-      "prix",
-      "deplacement",
-      "taille_montage",
-      "niveaux"
-    ]
-     },
+    "usage": "Démonstration académique uniquement ; toutes les données sont fictives.",
+    "nombre_entrees": 40,
+    "prix": "EUR TTC, tarifs fictifs tout compris, sans supplément ni calcul de TVA."
+  },
   "referentiels": {
     "niveaux": [
-      "trés nul",
-      "null",
-      "simple",
-      "normal",
-      "bien",
-      "trés bien",
-      "exelent",
-      "parfait"
+      "absent",
+      "basique",
+      "standard",
+      "bon",
+      "excellent"
     ],
-    "taille_montage": [
-      "trés petit",
-      "petit",
-      "normal",
-      "grand",
-      "trés grand",
-      "geant"
-    ],
-    "interpretation": "Niveau d'équipement du kit simulé, pas une note de qualité du prestataire.",
-    "definitions": {
-      "trés nul": "Équipement très limité",
-      "null": "Prestation absente du kit",
-      "simple": "Équipement de base",
-      "normal": "Équipement standard",
-      "bien": "Équipement renforcé",
-      "trés bien": "Dispositif avancé",
-      "exelent": "Dispositif de grande ampleur",
-      "parfait": "Niveau maximal du modèle"
-    },
-    "null_json": "Une valeur JSON null signifie inconnu ; la chaîne \"null\" signifie absent du kit."
+    "interpretation": "Niveau technique du kit fictif. Excellent correspond notamment à un très bon système sonore."
   },
   "prestataires": [
     {
       "id": "001",
       "nom": "PRG Belgium",
       "lieux": "Tildonk (Haacht)",
-      "adresse": "Vaartdijk 6, 3150 Tildonk",
-      "profil_simulation": "grandes productions",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 2.5
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 50000,
           "description": "Son de grande scène, éclairage motorisé et mur LED.",
-          "son": "exelent",
-          "light": "exelent",
-          "video": "exelent",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 50000
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 75000,
           "description": "Son renforcé, création lumière et deux écrans LED.",
-          "son": "exelent",
-          "light": "parfait",
-          "video": "exelent",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 75000
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 100000,
           "description": "Concert avec retours scène, lumière avancée et captation.",
-          "son": "parfait",
-          "light": "exelent",
-          "video": "exelent",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 100000
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 150000,
           "description": "Festival avec son longue portée, show lumière et multicaméra.",
-          "son": "parfait",
-          "light": "parfait",
-          "video": "exelent",
-          "taille_montage": "geant"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 150000
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 250000,
           "description": "Production multizone avec son, lumière et vidéo complexes.",
-          "son": "parfait",
-          "light": "parfait",
-          "video": "parfait",
-          "taille_montage": "geant"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 250000
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 400000,
           "description": "Grand spectacle avec régies redondantes et scénographie audiovisuelle.",
-          "son": "parfait",
-          "light": "parfait",
-          "video": "parfait",
-          "taille_montage": "geant"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 400000
         }
       ]
     },
@@ -122,65 +74,54 @@
       "id": "002",
       "nom": "B-Sound Events",
       "lieux": "Namur",
-      "adresse": "Rue de Gembloux 500, bâtiment 21, 5002 Namur",
-      "profil_simulation": "petits kits et prestations évolutives",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 0.75
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 150,
           "description": "Deux petites enceintes ; sans lumière ni vidéo.",
-          "son": "simple",
-          "light": "null",
-          "video": "null",
-          "taille_montage": "trés petit"
+          "son": "basique",
+          "light": "absent",
+          "video": "absent",
+          "prix_ttc": 150
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 250,
           "description": "Son basique et barre LED ; sans vidéo.",
-          "son": "simple",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "basique",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 250
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 450,
           "description": "Son avec renfort de basses et éclairage basique.",
-          "son": "normal",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "standard",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 450
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 800,
           "description": "Son de soirée, éclairage d'ambiance et projection simple.",
-          "son": "normal",
-          "light": "normal",
-          "video": "simple",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "basique",
+          "prix_ttc": 800
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 1500,
           "description": "Son renforcé, quelques lyres et écran de projection.",
-          "son": "bien",
-          "light": "bien",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "bon",
+          "video": "standard",
+          "prix_ttc": 1500
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 3000,
           "description": "Petite scène avec retours, lumière pilotée et diffusion vidéo.",
-          "son": "trés bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 3000
         }
       ]
     },
@@ -188,65 +129,54 @@
       "id": "003",
       "nom": "AES Audiovisual",
       "lieux": "Huissignies (Chièvres)",
-      "adresse": null,
-      "profil_simulation": "prestations locales et régionales",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 0.85
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 250,
           "description": "Petite sonorisation pour parole ; sans lumière ni vidéo.",
-          "son": "simple",
-          "light": "null",
-          "video": "null",
-          "taille_montage": "trés petit"
+          "son": "basique",
+          "light": "absent",
+          "video": "absent",
+          "prix_ttc": 250
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 500,
           "description": "Son de réception et quelques projecteurs LED.",
-          "son": "normal",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "standard",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 500
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 1000,
           "description": "Son de soirée, éclairage piloté et projection basique.",
-          "son": "bien",
-          "light": "normal",
-          "video": "simple",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "standard",
+          "video": "basique",
+          "prix_ttc": 1000
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 2000,
           "description": "Petite scène, retours musiciens, lyres et projection.",
-          "son": "bien",
-          "light": "bien",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "bon",
+          "video": "standard",
+          "prix_ttc": 2000
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 4000,
           "description": "Concert avec son renforcé, show lumière et vidéo.",
-          "son": "trés bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 4000
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 7500,
           "description": "Production régionale avec son, lumière et captation multicaméra.",
-          "son": "trés bien",
-          "light": "trés bien",
-          "video": "trés bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 7500
         }
       ]
     },
@@ -254,65 +184,54 @@
       "id": "004",
       "nom": "Régicler",
       "lieux": "Alleur (Ans)",
-      "adresse": "Avenue de l'Énergie 26, 4432 Alleur",
-      "profil_simulation": "conférences et événements régionaux",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 0.95
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 500,
           "description": "Son de conférence, micro et éclairage très limité.",
-          "son": "normal",
-          "light": "trés nul",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "standard",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 500
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 1000,
           "description": "Conférence avec son, éclairage de face et projection.",
-          "son": "normal",
-          "light": "simple",
-          "video": "normal",
-          "taille_montage": "petit"
+          "son": "standard",
+          "light": "basique",
+          "video": "standard",
+          "prix_ttc": 1000
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 2000,
           "description": "Séminaire avec plusieurs micros, éclairage et grand écran.",
-          "son": "bien",
-          "light": "normal",
-          "video": "bien",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "standard",
+          "video": "bon",
+          "prix_ttc": 1950
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 4000,
           "description": "Événement d'entreprise avec son, lumière pilotée et captation.",
-          "son": "bien",
-          "light": "bien",
-          "video": "trés bien",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "bon",
+          "video": "excellent",
+          "prix_ttc": 2300
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 7500,
           "description": "Convention avec retours, éclairage scénique et multicaméra.",
-          "son": "trés bien",
-          "light": "trés bien",
-          "video": "trés bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2650
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 12500,
           "description": "Production audiovisuelle avec plusieurs zones et réalisation vidéo.",
-          "son": "exelent",
-          "light": "trés bien",
-          "video": "exelent",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 3000
         }
       ]
     },
@@ -320,65 +239,54 @@
       "id": "005",
       "nom": "Total Organisation",
       "lieux": "Gembloux / Wasseiges",
-      "adresse": "Entrepôt : Rue Haie Nicolas 31, 5030 Gembloux ; siège : Clos du Lac 189, 4219 Wasseiges",
-      "profil_simulation": "prestations régionales avec vidéo",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 0.85
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 350,
           "description": "Son de réception et quelques LED ; sans vidéo.",
-          "son": "simple",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "basique",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 350
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 750,
           "description": "Son de soirée, éclairage d'ambiance et vidéoprojecteur.",
-          "son": "normal",
-          "light": "normal",
-          "video": "simple",
-          "taille_montage": "petit"
+          "son": "standard",
+          "light": "standard",
+          "video": "basique",
+          "prix_ttc": 750
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 1500,
           "description": "Son renforcé, éclairage piloté et diffusion sur écran.",
-          "son": "bien",
-          "light": "bien",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "bon",
+          "video": "standard",
+          "prix_ttc": 1500
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 3000,
           "description": "Petite scène avec son, lyres et petit mur LED.",
-          "son": "bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 1850
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 6000,
           "description": "Concert régional avec son renforcé, lumière et mur LED.",
-          "son": "trés bien",
-          "light": "trés bien",
-          "video": "trés bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2200
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 10000,
           "description": "Événement multizone avec lumière scénique et captation vidéo.",
-          "son": "exelent",
-          "light": "trés bien",
-          "video": "exelent",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2550
         }
       ]
     },
@@ -386,65 +294,54 @@
       "id": "006",
       "nom": "Group-PDA",
       "lieux": "As",
-      "adresse": "Ambachtslaan 10, 3665 As",
-      "profil_simulation": "concerts et festivals",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 1.5
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 2500,
           "description": "Petite scène avec son, retours et lumière ; sans vidéo.",
-          "son": "bien",
-          "light": "bien",
-          "video": "null",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "bon",
+          "video": "absent",
+          "prix_ttc": 950
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 5000,
           "description": "Concert avec son renforcé, lyres et projection simple.",
-          "son": "trés bien",
-          "light": "bien",
-          "video": "simple",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "bon",
+          "video": "basique",
+          "prix_ttc": 1300
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 10000,
           "description": "Scène de festival avec son, show lumière et diffusion vidéo.",
-          "son": "trés bien",
-          "light": "trés bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "bon",
+          "prix_ttc": 1650
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 20000,
           "description": "Festival avec diffusion étendue, lumière avancée et écrans.",
-          "son": "exelent",
-          "light": "exelent",
-          "video": "trés bien",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2000
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 40000,
           "description": "Grande scène avec son, éclairage complexe et réalisation vidéo.",
-          "son": "exelent",
-          "light": "parfait",
-          "video": "exelent",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2350
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 75000,
           "description": "Production de grande ampleur avec régies et écrans multiples.",
-          "son": "parfait",
-          "light": "parfait",
-          "video": "exelent",
-          "taille_montage": "geant"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2700
         }
       ]
     },
@@ -452,65 +349,54 @@
       "id": "007",
       "nom": "ASP Creative Event Engineers",
       "lieux": "Lier",
-      "adresse": "Kelderveld 17, 2500 Lier",
-      "profil_simulation": "conventions et productions événementielles",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 1.5
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 3000,
           "description": "Conférence avec son, éclairage de scène et projection.",
-          "son": "bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 1100
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 6000,
           "description": "Convention avec micros multiples, lumière et grands écrans.",
-          "son": "trés bien",
-          "light": "bien",
-          "video": "trés bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "bon",
+          "video": "excellent",
+          "prix_ttc": 1450
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 12000,
           "description": "Événement d'entreprise avec son renforcé, lyres et captation.",
-          "son": "trés bien",
-          "light": "trés bien",
-          "video": "trés bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 1800
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 25000,
           "description": "Convention majeure avec son multizone, lumière et mur LED.",
-          "son": "exelent",
-          "light": "exelent",
-          "video": "exelent",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2150
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 50000,
           "description": "Production avec scénographie lumineuse et vidéo multisurface.",
-          "son": "exelent",
-          "light": "parfait",
-          "video": "exelent",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2500
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 90000,
           "description": "Grand événement avec régies redondantes et dispositif audiovisuel étendu.",
-          "son": "parfait",
-          "light": "parfait",
-          "video": "parfait",
-          "taille_montage": "geant"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2850
         }
       ]
     },
@@ -518,65 +404,54 @@
       "id": "008",
       "nom": "L&L Stage Service",
       "lieux": "Meerhout",
-      "adresse": "Eindhoutsebaan 95, 2450 Meerhout",
-      "profil_simulation": "concerts, tournées et grandes productions",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 1.8
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 5000,
           "description": "Scène de concert avec son, retours, lumière et projection simple.",
-          "son": "trés bien",
-          "light": "bien",
-          "video": "simple",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "bon",
+          "video": "basique",
+          "prix_ttc": 1250
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 10000,
           "description": "Concert avec son renforcé, lyres et diffusion sur écran.",
-          "son": "trés bien",
-          "light": "trés bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "bon",
+          "prix_ttc": 1600
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 20000,
           "description": "Festival avec son longue portée, lumière et mur LED.",
-          "son": "exelent",
-          "light": "exelent",
-          "video": "trés bien",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 1950
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 40000,
           "description": "Grande scène avec show lumière et réalisation multicaméra.",
-          "son": "exelent",
-          "light": "parfait",
-          "video": "exelent",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2300
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 75000,
           "description": "Production étendue avec son multizone et vidéo multisurface.",
-          "son": "parfait",
-          "light": "parfait",
-          "video": "exelent",
-          "taille_montage": "geant"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2650
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 125000,
           "description": "Grand spectacle avec régies redondantes et écrans multiples.",
-          "son": "parfait",
-          "light": "parfait",
-          "video": "parfait",
-          "taille_montage": "geant"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 3000
         }
       ]
     },
@@ -584,65 +459,54 @@
       "id": "009",
       "nom": "Splendit",
       "lieux": "Aalst (Erembodegem)",
-      "adresse": "Waterkeringstraat 13, 9320 Aalst",
-      "profil_simulation": "son et lumière pour concerts et tournées",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 1.5
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 2000,
           "description": "Son de petite scène et éclairage LED ; sans vidéo.",
-          "son": "bien",
-          "light": "bien",
-          "video": "null",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "bon",
+          "video": "absent",
+          "prix_ttc": 800
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 4000,
           "description": "Concert avec son renforcé et lyres ; sans vidéo.",
-          "son": "trés bien",
-          "light": "bien",
-          "video": "null",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "bon",
+          "video": "absent",
+          "prix_ttc": 1150
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 8000,
           "description": "Scène avec retours musiciens et lumière programmée ; sans vidéo.",
-          "son": "trés bien",
-          "light": "trés bien",
-          "video": "null",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "absent",
+          "prix_ttc": 1500
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 15000,
           "description": "Festival avec son étendu et show lumière ; sans vidéo.",
-          "son": "exelent",
-          "light": "exelent",
-          "video": "null",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "absent",
+          "prix_ttc": 1850
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 30000,
           "description": "Grande scène avec diffusion renforcée et lumière complexe ; sans vidéo.",
-          "son": "exelent",
-          "light": "parfait",
-          "video": "null",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "absent",
+          "prix_ttc": 2200
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 60000,
           "description": "Grande production son et lumière avec régies redondantes ; sans vidéo.",
-          "son": "parfait",
-          "light": "parfait",
-          "video": "null",
-          "taille_montage": "geant"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "absent",
+          "prix_ttc": 2550
         }
       ]
     },
@@ -650,65 +514,54 @@
       "id": "010",
       "nom": "BLUE MOON",
       "lieux": "Aartselaar / Bruxelles",
-      "adresse": "Kontichsesteenweg 48, 2630 Aartselaar ; Avenue Louise 500, boîte 260, 1050 Bruxelles",
-      "profil_simulation": "événements d'entreprise et audiovisuel",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 1.25
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 1500,
           "description": "Conférence avec son, éclairage de face et projection.",
-          "son": "normal",
-          "light": "simple",
-          "video": "bien",
-          "taille_montage": "petit"
+          "son": "standard",
+          "light": "basique",
+          "video": "bon",
+          "prix_ttc": 950
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 3000,
           "description": "Séminaire avec plusieurs micros, éclairage et diffusion vidéo.",
-          "son": "bien",
-          "light": "normal",
-          "video": "bien",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "standard",
+          "video": "bon",
+          "prix_ttc": 1300
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 6000,
           "description": "Événement hybride avec son, lumière et captation.",
-          "son": "trés bien",
-          "light": "bien",
-          "video": "trés bien",
-          "taille_montage": "normal"
+          "son": "excellent",
+          "light": "bon",
+          "video": "excellent",
+          "prix_ttc": 1650
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 12000,
           "description": "Convention avec son multizone, lumière pilotée et mur LED.",
-          "son": "trés bien",
-          "light": "trés bien",
-          "video": "exelent",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2000
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 25000,
           "description": "Convention majeure avec scénographie lumineuse et multicaméra.",
-          "son": "exelent",
-          "light": "exelent",
-          "video": "exelent",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2350
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 50000,
           "description": "Production d'entreprise avec régies redondantes et vidéo multisurface.",
-          "son": "exelent",
-          "light": "parfait",
-          "video": "parfait",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2700
         }
       ]
     },
@@ -716,67 +569,55 @@
       "id": "011",
       "nom": "Auvicom",
       "lieux": "Halle",
-      "adresse": null,
-      "profil_simulation": "grande",
       "province": "Brabant flamand",
-      "categorie_taille": "grande",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 1.9
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 6500,
           "description": "Son de scène, huit retours, douze lyres et mur LED.",
-          "son": "trés bien",
-          "light": "trés bien",
-          "video": "trés bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 1100
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 12000,
           "description": "Son multizone, vingt-quatre lyres et deux murs LED.",
-          "son": "exelent",
-          "light": "trés bien",
-          "video": "exelent",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 1450
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 22000,
           "description": "Son longue portée, trente-deux lyres et quatre caméras.",
-          "son": "exelent",
-          "light": "exelent",
-          "video": "exelent",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 1800
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 38000,
           "description": "Son multizone, quarante-huit lyres et vidéo multisurface.",
-          "son": "exelent",
-          "light": "parfait",
-          "video": "exelent",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2150
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 60000,
           "description": "Trois zones sonores, soixante-quatre lyres et régie vidéo redondante.",
-          "son": "parfait",
-          "light": "parfait",
-          "video": "exelent",
-          "taille_montage": "geant"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2500
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 95000,
           "description": "Son étendu, quatre-vingts lyres, écrans multiples et régies redondantes.",
-          "son": "parfait",
-          "light": "parfait",
-          "video": "parfait",
-          "taille_montage": "geant"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2850
         }
       ]
     },
@@ -784,67 +625,55 @@
       "id": "012",
       "nom": "Ampli",
       "lieux": "Hever (Boortmeerbeek)",
-      "adresse": null,
-      "profil_simulation": "moyenne",
       "province": "Brabant flamand",
-      "categorie_taille": "moyenne",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 1.13
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 1560,
           "description": "Son de salle, quatre micros, éclairage de face et projection.",
-          "son": "normal",
-          "light": "normal",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "standard",
+          "prix_ttc": 1250
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 2910,
           "description": "Son renforcé, éclairage d'ambiance et deux écrans.",
-          "son": "bien",
-          "light": "bien",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "bon",
+          "video": "standard",
+          "prix_ttc": 1600
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 5200,
           "description": "Son de scène, six retours, huit lyres et petit mur LED.",
-          "son": "trés bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 1950
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 8840,
           "description": "Son multizone, douze lyres et captation à deux caméras.",
-          "son": "trés bien",
-          "light": "trés bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "bon",
+          "prix_ttc": 2300
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 14560,
           "description": "Son étendu, seize lyres, mur LED et trois caméras.",
-          "son": "exelent",
-          "light": "trés bien",
-          "video": "trés bien",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2650
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 22880,
           "description": "Son multizone, vingt-quatre lyres, deux murs LED et quatre caméras.",
-          "son": "exelent",
-          "light": "exelent",
-          "video": "exelent",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 3000
         }
       ]
     },
@@ -852,67 +681,55 @@
       "id": "013",
       "nom": "Audio Visual Support - AVS",
       "lieux": "Bruxelles",
-      "adresse": null,
-      "profil_simulation": "petite",
       "province": "Bruxelles-Capitale",
-      "categorie_taille": "petite",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 0.76
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 195,
           "description": "Deux enceintes compactes ; sans lumière ni vidéo.",
-          "son": "simple",
-          "light": "null",
-          "video": "null",
-          "taille_montage": "trés petit"
+          "son": "basique",
+          "light": "absent",
+          "video": "absent",
+          "prix_ttc": 195
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 345,
           "description": "Deux enceintes et une barre LED.",
-          "son": "simple",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "basique",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 345
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 595,
           "description": "Deux enceintes, un caisson et quatre LED.",
-          "son": "normal",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "standard",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 595
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 970,
           "description": "Son de salle, six LED et vidéoprojecteur.",
-          "son": "normal",
-          "light": "normal",
-          "video": "simple",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "basique",
+          "prix_ttc": 970
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 1620,
           "description": "Son renforcé, deux retours, quatre lyres et projection.",
-          "son": "bien",
-          "light": "normal",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "standard",
+          "video": "standard",
+          "prix_ttc": 1620
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 2810,
           "description": "Son renforcé, quatre retours, six lyres et petit écran LED.",
-          "son": "bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "bon",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 2550
         }
       ]
     },
@@ -920,67 +737,55 @@
       "id": "014",
       "nom": "Sound&Co",
       "lieux": "Gooik (Pajottegem)",
-      "adresse": null,
-      "profil_simulation": "petite",
       "province": "Brabant flamand",
-      "categorie_taille": "petite",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 0.79
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 200,
           "description": "Deux enceintes compactes ; sans lumière ni vidéo.",
-          "son": "simple",
-          "light": "null",
-          "video": "null",
-          "taille_montage": "trés petit"
+          "son": "basique",
+          "light": "absent",
+          "video": "absent",
+          "prix_ttc": 200
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 360,
           "description": "Deux enceintes et une barre LED.",
-          "son": "simple",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "basique",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 360
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 615,
           "description": "Deux enceintes, un caisson et quatre LED.",
-          "son": "normal",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "standard",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 615
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 1010,
           "description": "Son de salle, six LED et vidéoprojecteur.",
-          "son": "normal",
-          "light": "normal",
-          "video": "simple",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "basique",
+          "prix_ttc": 1010
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 1680,
           "description": "Son renforcé, deux retours, quatre lyres et projection.",
-          "son": "bien",
-          "light": "normal",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "standard",
+          "video": "standard",
+          "prix_ttc": 1680
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 2910,
           "description": "Son renforcé, quatre retours, six lyres et petit écran LED.",
-          "son": "bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "bon",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 2700
         }
       ]
     },
@@ -988,67 +793,55 @@
       "id": "015",
       "nom": "AVrent",
       "lieux": "Rijmenam (Bonheiden)",
-      "adresse": null,
-      "profil_simulation": "petite",
       "province": "Anvers",
-      "categorie_taille": "petite",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 0.82
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 210,
           "description": "Deux enceintes compactes ; sans lumière ni vidéo.",
-          "son": "simple",
-          "light": "null",
-          "video": "null",
-          "taille_montage": "trés petit"
+          "son": "basique",
+          "light": "absent",
+          "video": "absent",
+          "prix_ttc": 210
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 370,
           "description": "Deux enceintes et une barre LED.",
-          "son": "simple",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "basique",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 370
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 640,
           "description": "Deux enceintes, un caisson et quatre LED.",
-          "son": "normal",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "standard",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 640
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 1045,
           "description": "Son de salle, six LED et vidéoprojecteur.",
-          "son": "normal",
-          "light": "normal",
-          "video": "simple",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "basique",
+          "prix_ttc": 1045
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 1740,
           "description": "Son renforcé, deux retours, quatre lyres et projection.",
-          "son": "bien",
-          "light": "normal",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "standard",
+          "video": "standard",
+          "prix_ttc": 1740
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 3015,
           "description": "Son renforcé, quatre retours, six lyres et petit écran LED.",
-          "son": "bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "bon",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 2850
         }
       ]
     },
@@ -1056,67 +849,55 @@
       "id": "016",
       "nom": "Audium audiovisual-light",
       "lieux": "Broechem (Ranst)",
-      "adresse": null,
-      "profil_simulation": "petite",
       "province": "Anvers",
-      "categorie_taille": "petite",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 0.7
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 180,
           "description": "Deux enceintes compactes ; sans lumière ni vidéo.",
-          "son": "simple",
-          "light": "null",
-          "video": "null",
-          "taille_montage": "trés petit"
+          "son": "basique",
+          "light": "absent",
+          "video": "absent",
+          "prix_ttc": 180
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 320,
           "description": "Deux enceintes et une barre LED.",
-          "son": "simple",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "basique",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 320
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 550,
           "description": "Deux enceintes, un caisson et quatre LED.",
-          "son": "normal",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "standard",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 550
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 900,
           "description": "Son de salle, six LED et vidéoprojecteur.",
-          "son": "normal",
-          "light": "normal",
-          "video": "simple",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "basique",
+          "prix_ttc": 900
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 1500,
           "description": "Son renforcé, deux retours, quatre lyres et projection.",
-          "son": "bien",
-          "light": "normal",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "standard",
+          "video": "standard",
+          "prix_ttc": 1500
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 2600,
           "description": "Son renforcé, quatre retours, six lyres et petit écran LED.",
-          "son": "bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "bon",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 2600
         }
       ]
     },
@@ -1124,67 +905,55 @@
       "id": "017",
       "nom": "AVP audio visual partners",
       "lieux": "Anvers",
-      "adresse": null,
-      "profil_simulation": "moyenne",
       "province": "Anvers",
-      "categorie_taille": "moyenne",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 1.13
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 1560,
           "description": "Son de salle, quatre micros, éclairage de face et projection.",
-          "son": "normal",
-          "light": "normal",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "standard",
+          "prix_ttc": 800
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 2910,
           "description": "Son renforcé, éclairage d'ambiance et deux écrans.",
-          "son": "bien",
-          "light": "bien",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "bon",
+          "video": "standard",
+          "prix_ttc": 1150
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 5200,
           "description": "Son de scène, six retours, huit lyres et petit mur LED.",
-          "son": "trés bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 1500
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 8840,
           "description": "Son multizone, douze lyres et captation à deux caméras.",
-          "son": "trés bien",
-          "light": "trés bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "bon",
+          "prix_ttc": 1850
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 14560,
           "description": "Son étendu, seize lyres, mur LED et trois caméras.",
-          "son": "exelent",
-          "light": "trés bien",
-          "video": "trés bien",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2200
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 22880,
           "description": "Son multizone, vingt-quatre lyres, deux murs LED et quatre caméras.",
-          "son": "exelent",
-          "light": "exelent",
-          "video": "exelent",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2550
         }
       ]
     },
@@ -1192,67 +961,55 @@
       "id": "018",
       "nom": "PLAY AV",
       "lieux": "Nazareth-De Pinte / Vilvoorde / Zonhoven",
-      "adresse": null,
-      "profil_simulation": "moyenne",
       "province": "Flandre orientale / Brabant flamand / Limbourg",
-      "categorie_taille": "moyenne",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 1.16
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 1620,
           "description": "Son de salle, quatre micros, éclairage de face et projection.",
-          "son": "normal",
-          "light": "normal",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "standard",
+          "prix_ttc": 950
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 3025,
           "description": "Son renforcé, éclairage d'ambiance et deux écrans.",
-          "son": "bien",
-          "light": "bien",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "bon",
+          "video": "standard",
+          "prix_ttc": 1300
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 5400,
           "description": "Son de scène, six retours, huit lyres et petit mur LED.",
-          "son": "trés bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 1650
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 9180,
           "description": "Son multizone, douze lyres et captation à deux caméras.",
-          "son": "trés bien",
-          "light": "trés bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "bon",
+          "prix_ttc": 2000
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 15120,
           "description": "Son étendu, seize lyres, mur LED et trois caméras.",
-          "son": "exelent",
-          "light": "trés bien",
-          "video": "trés bien",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2350
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 23760,
           "description": "Son multizone, vingt-quatre lyres, deux murs LED et quatre caméras.",
-          "son": "exelent",
-          "light": "exelent",
-          "video": "exelent",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2700
         }
       ]
     },
@@ -1260,67 +1017,55 @@
       "id": "019",
       "nom": "SLS Event",
       "lieux": "Marche-en-Famenne",
-      "adresse": null,
-      "profil_simulation": "petite",
       "province": "Luxembourg",
-      "categorie_taille": "petite",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 0.79
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 200,
           "description": "Deux enceintes compactes ; sans lumière ni vidéo.",
-          "son": "simple",
-          "light": "null",
-          "video": "null",
-          "taille_montage": "trés petit"
+          "son": "basique",
+          "light": "absent",
+          "video": "absent",
+          "prix_ttc": 200
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 360,
           "description": "Deux enceintes et une barre LED.",
-          "son": "simple",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "basique",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 360
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 615,
           "description": "Deux enceintes, un caisson et quatre LED.",
-          "son": "normal",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "standard",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 615
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 1010,
           "description": "Son de salle, six LED et vidéoprojecteur.",
-          "son": "normal",
-          "light": "normal",
-          "video": "simple",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "basique",
+          "prix_ttc": 1010
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 1680,
           "description": "Son renforcé, deux retours, quatre lyres et projection.",
-          "son": "bien",
-          "light": "normal",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "standard",
+          "video": "standard",
+          "prix_ttc": 1680
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 2910,
           "description": "Son renforcé, quatre retours, six lyres et petit écran LED.",
-          "son": "bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "bon",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 2910
         }
       ]
     },
@@ -1328,67 +1073,55 @@
       "id": "020",
       "nom": "Atomax Events",
       "lieux": "Gembloux",
-      "adresse": null,
-      "profil_simulation": "petite",
       "province": "Namur",
-      "categorie_taille": "petite",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 0.82
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 210,
           "description": "Deux enceintes compactes ; sans lumière ni vidéo.",
-          "son": "simple",
-          "light": "null",
-          "video": "null",
-          "taille_montage": "trés petit"
+          "son": "basique",
+          "light": "absent",
+          "video": "absent",
+          "prix_ttc": 210
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 370,
           "description": "Deux enceintes et une barre LED.",
-          "son": "simple",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "basique",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 370
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 640,
           "description": "Deux enceintes, un caisson et quatre LED.",
-          "son": "normal",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "standard",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 640
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 1045,
           "description": "Son de salle, six LED et vidéoprojecteur.",
-          "son": "normal",
-          "light": "normal",
-          "video": "simple",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "basique",
+          "prix_ttc": 1045
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 1740,
           "description": "Son renforcé, deux retours, quatre lyres et projection.",
-          "son": "bien",
-          "light": "normal",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "standard",
+          "video": "standard",
+          "prix_ttc": 1740
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 3015,
           "description": "Son renforcé, quatre retours, six lyres et petit écran LED.",
-          "son": "bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "bon",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 3000
         }
       ]
     },
@@ -1396,67 +1129,55 @@
       "id": "021",
       "nom": "Omega Belgium",
       "lieux": "Meulebeke (Tielt)",
-      "adresse": null,
-      "profil_simulation": "petite",
       "province": "Flandre occidentale",
-      "categorie_taille": "petite",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 0.7
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 180,
           "description": "Deux enceintes compactes ; sans lumière ni vidéo.",
-          "son": "simple",
-          "light": "null",
-          "video": "null",
-          "taille_montage": "trés petit"
+          "son": "basique",
+          "light": "absent",
+          "video": "absent",
+          "prix_ttc": 180
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 320,
           "description": "Deux enceintes et une barre LED.",
-          "son": "simple",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "basique",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 320
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 550,
           "description": "Deux enceintes, un caisson et quatre LED.",
-          "son": "normal",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "standard",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 550
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 900,
           "description": "Son de salle, six LED et vidéoprojecteur.",
-          "son": "normal",
-          "light": "normal",
-          "video": "simple",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "basique",
+          "prix_ttc": 900
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 1500,
           "description": "Son renforcé, deux retours, quatre lyres et projection.",
-          "son": "bien",
-          "light": "normal",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "standard",
+          "video": "standard",
+          "prix_ttc": 1500
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 2600,
           "description": "Son renforcé, quatre retours, six lyres et petit écran LED.",
-          "son": "bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "bon",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 2550
         }
       ]
     },
@@ -1464,67 +1185,55 @@
       "id": "022",
       "nom": "STARSOUND BENELUX",
       "lieux": "Molenbeek-Saint-Jean",
-      "adresse": null,
-      "profil_simulation": "petite",
       "province": "Bruxelles-Capitale",
-      "categorie_taille": "petite",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 0.73
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 185,
           "description": "Deux enceintes compactes ; sans lumière ni vidéo.",
-          "son": "simple",
-          "light": "null",
-          "video": "null",
-          "taille_montage": "trés petit"
+          "son": "basique",
+          "light": "absent",
+          "video": "absent",
+          "prix_ttc": 185
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 335,
           "description": "Deux enceintes et une barre LED.",
-          "son": "simple",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "basique",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 335
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 570,
           "description": "Deux enceintes, un caisson et quatre LED.",
-          "son": "normal",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "standard",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 570
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 935,
           "description": "Son de salle, six LED et vidéoprojecteur.",
-          "son": "normal",
-          "light": "normal",
-          "video": "simple",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "basique",
+          "prix_ttc": 935
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 1560,
           "description": "Son renforcé, deux retours, quatre lyres et projection.",
-          "son": "bien",
-          "light": "normal",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "standard",
+          "video": "standard",
+          "prix_ttc": 1560
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 2705,
           "description": "Son renforcé, quatre retours, six lyres et petit écran LED.",
-          "son": "bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "bon",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 2700
         }
       ]
     },
@@ -1532,67 +1241,55 @@
       "id": "023",
       "nom": "KLANK & LICHT",
       "lieux": "Veurne",
-      "adresse": null,
-      "profil_simulation": "petite",
       "province": "Flandre occidentale",
-      "categorie_taille": "petite",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 0.76
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 195,
           "description": "Deux enceintes compactes ; sans lumière ni vidéo.",
-          "son": "simple",
-          "light": "null",
-          "video": "null",
-          "taille_montage": "trés petit"
+          "son": "basique",
+          "light": "absent",
+          "video": "absent",
+          "prix_ttc": 195
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 345,
           "description": "Deux enceintes et une barre LED.",
-          "son": "simple",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "basique",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 345
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 595,
           "description": "Deux enceintes, un caisson et quatre LED.",
-          "son": "normal",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "standard",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 595
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 970,
           "description": "Son de salle, six LED et vidéoprojecteur.",
-          "son": "normal",
-          "light": "normal",
-          "video": "simple",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "basique",
+          "prix_ttc": 970
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 1620,
           "description": "Son renforcé, deux retours, quatre lyres et projection.",
-          "son": "bien",
-          "light": "normal",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "standard",
+          "video": "standard",
+          "prix_ttc": 1620
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 2810,
           "description": "Son renforcé, quatre retours, six lyres et petit écran LED.",
-          "son": "bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "bon",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 2810
         }
       ]
     },
@@ -1600,67 +1297,55 @@
       "id": "024",
       "nom": "Lights Up",
       "lieux": "Kain (Tournai)",
-      "adresse": null,
-      "profil_simulation": "petite",
       "province": "Hainaut",
-      "categorie_taille": "petite",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 0.79
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 200,
           "description": "Deux enceintes compactes ; sans lumière ni vidéo.",
-          "son": "simple",
-          "light": "null",
-          "video": "null",
-          "taille_montage": "trés petit"
+          "son": "basique",
+          "light": "absent",
+          "video": "absent",
+          "prix_ttc": 200
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 360,
           "description": "Deux enceintes et une barre LED.",
-          "son": "simple",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "basique",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 360
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 615,
           "description": "Deux enceintes, un caisson et quatre LED.",
-          "son": "normal",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "standard",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 615
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 1010,
           "description": "Son de salle, six LED et vidéoprojecteur.",
-          "son": "normal",
-          "light": "normal",
-          "video": "simple",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "basique",
+          "prix_ttc": 1010
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 1680,
           "description": "Son renforcé, deux retours, quatre lyres et projection.",
-          "son": "bien",
-          "light": "normal",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "standard",
+          "video": "standard",
+          "prix_ttc": 1680
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 2910,
           "description": "Son renforcé, quatre retours, six lyres et petit écran LED.",
-          "son": "bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "bon",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 2910
         }
       ]
     },
@@ -1668,67 +1353,55 @@
       "id": "025",
       "nom": "AB Sound",
       "lieux": "Opwijk",
-      "adresse": null,
-      "profil_simulation": "petite",
       "province": "Brabant flamand",
-      "categorie_taille": "petite",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 0.82
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 210,
           "description": "Deux enceintes compactes ; sans lumière ni vidéo.",
-          "son": "simple",
-          "light": "null",
-          "video": "null",
-          "taille_montage": "trés petit"
+          "son": "basique",
+          "light": "absent",
+          "video": "absent",
+          "prix_ttc": 210
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 370,
           "description": "Deux enceintes et une barre LED.",
-          "son": "simple",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "basique",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 370
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 640,
           "description": "Deux enceintes, un caisson et quatre LED.",
-          "son": "normal",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "standard",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 640
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 1045,
           "description": "Son de salle, six LED et vidéoprojecteur.",
-          "son": "normal",
-          "light": "normal",
-          "video": "simple",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "basique",
+          "prix_ttc": 1045
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 1740,
           "description": "Son renforcé, deux retours, quatre lyres et projection.",
-          "son": "bien",
-          "light": "normal",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "standard",
+          "video": "standard",
+          "prix_ttc": 1740
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 3015,
           "description": "Son renforcé, quatre retours, six lyres et petit écran LED.",
-          "son": "bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "bon",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 2550
         }
       ]
     },
@@ -1736,67 +1409,55 @@
       "id": "026",
       "nom": "MaxAmaze",
       "lieux": "Opwijk",
-      "adresse": null,
-      "profil_simulation": "moyenne",
       "province": "Brabant flamand",
-      "categorie_taille": "moyenne",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 1.1
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 1500,
           "description": "Son de salle, quatre micros, éclairage de face et projection.",
-          "son": "normal",
-          "light": "normal",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "standard",
+          "prix_ttc": 950
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 2800,
           "description": "Son renforcé, éclairage d'ambiance et deux écrans.",
-          "son": "bien",
-          "light": "bien",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "bon",
+          "video": "standard",
+          "prix_ttc": 1300
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 5000,
           "description": "Son de scène, six retours, huit lyres et petit mur LED.",
-          "son": "trés bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 1650
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 8500,
           "description": "Son multizone, douze lyres et captation à deux caméras.",
-          "son": "trés bien",
-          "light": "trés bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "bon",
+          "prix_ttc": 2000
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 14000,
           "description": "Son étendu, seize lyres, mur LED et trois caméras.",
-          "son": "exelent",
-          "light": "trés bien",
-          "video": "trés bien",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2350
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 22000,
           "description": "Son multizone, vingt-quatre lyres, deux murs LED et quatre caméras.",
-          "son": "exelent",
-          "light": "exelent",
-          "video": "exelent",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2700
         }
       ]
     },
@@ -1804,67 +1465,55 @@
       "id": "027",
       "nom": "John&Jane makes Sense",
       "lieux": "Ruiselede (Wingene)",
-      "adresse": null,
-      "profil_simulation": "moyenne",
       "province": "Flandre occidentale",
-      "categorie_taille": "moyenne",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 1.13
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 1560,
           "description": "Son de salle, quatre micros, éclairage de face et projection.",
-          "son": "normal",
-          "light": "normal",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "standard",
+          "prix_ttc": 1100
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 2910,
           "description": "Son renforcé, éclairage d'ambiance et deux écrans.",
-          "son": "bien",
-          "light": "bien",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "bon",
+          "video": "standard",
+          "prix_ttc": 1450
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 5200,
           "description": "Son de scène, six retours, huit lyres et petit mur LED.",
-          "son": "trés bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 1800
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 8840,
           "description": "Son multizone, douze lyres et captation à deux caméras.",
-          "son": "trés bien",
-          "light": "trés bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "bon",
+          "prix_ttc": 2150
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 14560,
           "description": "Son étendu, seize lyres, mur LED et trois caméras.",
-          "son": "exelent",
-          "light": "trés bien",
-          "video": "trés bien",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2500
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 22880,
           "description": "Son multizone, vingt-quatre lyres, deux murs LED et quatre caméras.",
-          "son": "exelent",
-          "light": "exelent",
-          "video": "exelent",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2850
         }
       ]
     },
@@ -1872,67 +1521,55 @@
       "id": "028",
       "nom": "GSP2 Event Technology",
       "lieux": "Wauthier-Braine (Braine-le-Château)",
-      "adresse": null,
-      "profil_simulation": "moyenne",
       "province": "Brabant wallon",
-      "categorie_taille": "moyenne",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 1.16
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 1620,
           "description": "Son de salle, quatre micros, éclairage de face et projection.",
-          "son": "normal",
-          "light": "normal",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "standard",
+          "prix_ttc": 1250
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 3025,
           "description": "Son renforcé, éclairage d'ambiance et deux écrans.",
-          "son": "bien",
-          "light": "bien",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "bon",
+          "video": "standard",
+          "prix_ttc": 1600
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 5400,
           "description": "Son de scène, six retours, huit lyres et petit mur LED.",
-          "son": "trés bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 1950
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 9180,
           "description": "Son multizone, douze lyres et captation à deux caméras.",
-          "son": "trés bien",
-          "light": "trés bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "bon",
+          "prix_ttc": 2300
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 15120,
           "description": "Son étendu, seize lyres, mur LED et trois caméras.",
-          "son": "exelent",
-          "light": "trés bien",
-          "video": "trés bien",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2650
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 23760,
           "description": "Son multizone, vingt-quatre lyres, deux murs LED et quatre caméras.",
-          "son": "exelent",
-          "light": "exelent",
-          "video": "exelent",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 3000
         }
       ]
     },
@@ -1940,67 +1577,55 @@
       "id": "029",
       "nom": "Stageconcept",
       "lieux": "Haccourt (Oupeye)",
-      "adresse": null,
-      "profil_simulation": "petite",
       "province": "Liège",
-      "categorie_taille": "petite",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 0.79
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 200,
           "description": "Deux enceintes compactes ; sans lumière ni vidéo.",
-          "son": "simple",
-          "light": "null",
-          "video": "null",
-          "taille_montage": "trés petit"
+          "son": "basique",
+          "light": "absent",
+          "video": "absent",
+          "prix_ttc": 200
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 360,
           "description": "Deux enceintes et une barre LED.",
-          "son": "simple",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "basique",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 360
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 615,
           "description": "Deux enceintes, un caisson et quatre LED.",
-          "son": "normal",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "standard",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 615
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 1010,
           "description": "Son de salle, six LED et vidéoprojecteur.",
-          "son": "normal",
-          "light": "normal",
-          "video": "simple",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "basique",
+          "prix_ttc": 1010
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 1680,
           "description": "Son renforcé, deux retours, quatre lyres et projection.",
-          "son": "bien",
-          "light": "normal",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "standard",
+          "video": "standard",
+          "prix_ttc": 1680
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 2910,
           "description": "Son renforcé, quatre retours, six lyres et petit écran LED.",
-          "son": "bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "bon",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 2550
         }
       ]
     },
@@ -2008,67 +1633,55 @@
       "id": "030",
       "nom": "TILEVENT",
       "lieux": "Namur",
-      "adresse": null,
-      "profil_simulation": "petite",
       "province": "Namur",
-      "categorie_taille": "petite",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 0.82
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 210,
           "description": "Deux enceintes compactes ; sans lumière ni vidéo.",
-          "son": "simple",
-          "light": "null",
-          "video": "null",
-          "taille_montage": "trés petit"
+          "son": "basique",
+          "light": "absent",
+          "video": "absent",
+          "prix_ttc": 210
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 370,
           "description": "Deux enceintes et une barre LED.",
-          "son": "simple",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "basique",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 370
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 640,
           "description": "Deux enceintes, un caisson et quatre LED.",
-          "son": "normal",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "standard",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 640
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 1045,
           "description": "Son de salle, six LED et vidéoprojecteur.",
-          "son": "normal",
-          "light": "normal",
-          "video": "simple",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "basique",
+          "prix_ttc": 1045
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 1740,
           "description": "Son renforcé, deux retours, quatre lyres et projection.",
-          "son": "bien",
-          "light": "normal",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "standard",
+          "video": "standard",
+          "prix_ttc": 1740
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 3015,
           "description": "Son renforcé, quatre retours, six lyres et petit écran LED.",
-          "son": "bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 2700
         }
       ]
     },
@@ -2076,67 +1689,55 @@
       "id": "031",
       "nom": "MGS - Event Provider",
       "lieux": "Louveigné (Sprimont)",
-      "adresse": null,
-      "profil_simulation": "moyenne",
       "province": "Liège",
-      "categorie_taille": "moyenne",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 1.1
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 1500,
           "description": "Son de salle, quatre micros, éclairage de face et projection.",
-          "son": "normal",
-          "light": "normal",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "standard",
+          "prix_ttc": 1100
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 2800,
           "description": "Son renforcé, éclairage d'ambiance et deux écrans.",
-          "son": "bien",
-          "light": "bien",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "bon",
+          "video": "standard",
+          "prix_ttc": 1450
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 5000,
           "description": "Son de scène, six retours, huit lyres et petit mur LED.",
-          "son": "trés bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 1800
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 8500,
           "description": "Son multizone, douze lyres et captation à deux caméras.",
-          "son": "trés bien",
-          "light": "trés bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "bon",
+          "prix_ttc": 2150
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 14000,
           "description": "Son étendu, seize lyres, mur LED et trois caméras.",
-          "son": "exelent",
-          "light": "trés bien",
-          "video": "trés bien",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2500
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 22000,
           "description": "Son multizone, vingt-quatre lyres, deux murs LED et quatre caméras.",
-          "son": "exelent",
-          "light": "exelent",
-          "video": "exelent",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2850
         }
       ]
     },
@@ -2144,67 +1745,55 @@
       "id": "032",
       "nom": "Thiribut Events",
       "lieux": "Fernelmont",
-      "adresse": null,
-      "profil_simulation": "moyenne",
       "province": "Namur",
-      "categorie_taille": "moyenne",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 1.13
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 1560,
           "description": "Son de salle, quatre micros, éclairage de face et projection.",
-          "son": "normal",
-          "light": "normal",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "standard",
+          "prix_ttc": 1250
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 2910,
           "description": "Son renforcé, éclairage d'ambiance et deux écrans.",
-          "son": "bien",
-          "light": "bien",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "bon",
+          "video": "standard",
+          "prix_ttc": 1600
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 5200,
           "description": "Son de scène, six retours, huit lyres et petit mur LED.",
-          "son": "trés bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 1950
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 8840,
           "description": "Son multizone, douze lyres et captation à deux caméras.",
-          "son": "trés bien",
-          "light": "trés bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "bon",
+          "prix_ttc": 2300
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 14560,
           "description": "Son étendu, seize lyres, mur LED et trois caméras.",
-          "son": "exelent",
-          "light": "trés bien",
-          "video": "trés bien",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2650
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 22880,
           "description": "Son multizone, vingt-quatre lyres, deux murs LED et quatre caméras.",
-          "son": "exelent",
-          "light": "exelent",
-          "video": "exelent",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 3000
         }
       ]
     },
@@ -2212,67 +1801,55 @@
       "id": "033",
       "nom": "Argon AV",
       "lieux": "Zomergem (Lievegem)",
-      "adresse": null,
-      "profil_simulation": "petite",
       "province": "Flandre orientale",
-      "categorie_taille": "petite",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 0.76
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 195,
           "description": "Deux enceintes compactes ; sans lumière ni vidéo.",
-          "son": "simple",
-          "light": "null",
-          "video": "null",
-          "taille_montage": "trés petit"
+          "son": "basique",
+          "light": "absent",
+          "video": "absent",
+          "prix_ttc": 195
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 345,
           "description": "Deux enceintes et une barre LED.",
-          "son": "simple",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "basique",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 345
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 595,
           "description": "Deux enceintes, un caisson et quatre LED.",
-          "son": "normal",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "standard",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 595
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 970,
           "description": "Son de salle, six LED et vidéoprojecteur.",
-          "son": "normal",
-          "light": "normal",
-          "video": "simple",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "basique",
+          "prix_ttc": 970
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 1620,
           "description": "Son renforcé, deux retours, quatre lyres et projection.",
-          "son": "bien",
-          "light": "normal",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "standard",
+          "video": "standard",
+          "prix_ttc": 1620
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 2810,
           "description": "Son renforcé, quatre retours, six lyres et petit écran LED.",
-          "son": "bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "bon",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 2550
         }
       ]
     },
@@ -2280,135 +1857,111 @@
       "id": "034",
       "nom": "NightSound.be",
       "lieux": "Andrimont (Dison)",
-      "adresse": null,
-      "profil_simulation": "micro",
       "province": "Liège",
-      "categorie_taille": "micro",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 0.54
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 100,
           "description": "Une enceinte compacte et un micro.",
-          "son": "trés nul",
-          "light": "null",
-          "video": "null",
-          "taille_montage": "trés petit"
+          "son": "basique",
+          "light": "absent",
+          "video": "absent",
+          "prix_ttc": 100
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 145,
           "description": "Une enceinte et deux petits projecteurs.",
-          "son": "trés nul",
-          "light": "trés nul",
-          "video": "null",
-          "taille_montage": "trés petit"
+          "son": "basique",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 145
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 200,
           "description": "Deux enceintes compactes et deux projecteurs.",
-          "son": "simple",
-          "light": "trés nul",
-          "video": "null",
-          "taille_montage": "trés petit"
+          "son": "basique",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 200
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 270,
           "description": "Deux enceintes et une barre LED.",
-          "son": "simple",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "basique",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 270
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 360,
           "description": "Son basique, barre LED et petit vidéoprojecteur.",
-          "son": "simple",
-          "light": "simple",
-          "video": "trés nul",
-          "taille_montage": "petit"
+          "son": "basique",
+          "light": "basique",
+          "video": "basique",
+          "prix_ttc": 360
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 505,
           "description": "Deux enceintes, quatre LED et vidéoprojecteur.",
-          "son": "simple",
-          "light": "simple",
-          "video": "simple",
-          "taille_montage": "petit"
+          "son": "basique",
+          "light": "basique",
+          "video": "basique",
+          "prix_ttc": 505
         }
       ]
     },
     {
       "id": "035",
       "nom": "DB Video",
-      "lieux": "Aartselaar",
-      "adresse": null,
-      "profil_simulation": "moyenne",
+      "lieux": "Anvers",
       "province": "Anvers",
-      "categorie_taille": "moyenne",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 1.22
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 1740,
           "description": "Son de salle, quatre micros, éclairage de face et projection.",
-          "son": "normal",
-          "light": "normal",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "standard",
+          "prix_ttc": 1100
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 3250,
           "description": "Son renforcé, éclairage d'ambiance et deux écrans.",
-          "son": "bien",
-          "light": "bien",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "bon",
+          "video": "standard",
+          "prix_ttc": 1450
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 5800,
           "description": "Son de scène, six retours, huit lyres et petit mur LED.",
-          "son": "trés bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 1800
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 9860,
           "description": "Son multizone, douze lyres et captation à deux caméras.",
-          "son": "trés bien",
-          "light": "trés bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "bon",
+          "prix_ttc": 2150
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 16240,
           "description": "Son étendu, seize lyres, mur LED et trois caméras.",
-          "son": "exelent",
-          "light": "trés bien",
-          "video": "trés bien",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2500
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 25520,
           "description": "Son multizone, vingt-quatre lyres, deux murs LED et quatre caméras.",
-          "son": "exelent",
-          "light": "exelent",
-          "video": "exelent",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2850
         }
       ]
     },
@@ -2416,67 +1969,55 @@
       "id": "036",
       "nom": "NewLines",
       "lieux": "Genk",
-      "adresse": null,
-      "profil_simulation": "petite",
       "province": "Limbourg",
-      "categorie_taille": "petite",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 0.7
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 180,
           "description": "Deux enceintes compactes ; sans lumière ni vidéo.",
-          "son": "simple",
-          "light": "null",
-          "video": "null",
-          "taille_montage": "trés petit"
+          "son": "basique",
+          "light": "absent",
+          "video": "absent",
+          "prix_ttc": 180
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 320,
           "description": "Deux enceintes et une barre LED.",
-          "son": "simple",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "basique",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 320
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 550,
           "description": "Deux enceintes, un caisson et quatre LED.",
-          "son": "normal",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "standard",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 550
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 900,
           "description": "Son de salle, six LED et vidéoprojecteur.",
-          "son": "normal",
-          "light": "normal",
-          "video": "simple",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "basique",
+          "prix_ttc": 900
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 1500,
           "description": "Son renforcé, deux retours, quatre lyres et projection.",
-          "son": "bien",
-          "light": "normal",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "standard",
+          "video": "standard",
+          "prix_ttc": 1500
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 2600,
           "description": "Son renforcé, quatre retours, six lyres et petit écran LED.",
-          "son": "bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "bon",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 2600
         }
       ]
     },
@@ -2484,67 +2025,55 @@
       "id": "037",
       "nom": "LSE by Laser System Europe",
       "lieux": "Braine-l'Alleud",
-      "adresse": null,
-      "profil_simulation": "petite",
       "province": "Brabant wallon",
-      "categorie_taille": "petite",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 0.73
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 185,
           "description": "Deux enceintes compactes ; sans lumière ni vidéo.",
-          "son": "simple",
-          "light": "null",
-          "video": "null",
-          "taille_montage": "trés petit"
+          "son": "basique",
+          "light": "absent",
+          "video": "absent",
+          "prix_ttc": 185
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 335,
           "description": "Deux enceintes et une barre LED.",
-          "son": "simple",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "basique",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 335
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 570,
           "description": "Deux enceintes, un caisson et quatre LED.",
-          "son": "normal",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "standard",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 570
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 935,
           "description": "Son de salle, six LED et vidéoprojecteur.",
-          "son": "normal",
-          "light": "normal",
-          "video": "simple",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "basique",
+          "prix_ttc": 935
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 1560,
           "description": "Son renforcé, deux retours, quatre lyres et projection.",
-          "son": "bien",
-          "light": "normal",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "standard",
+          "video": "standard",
+          "prix_ttc": 1560
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 2705,
           "description": "Son renforcé, quatre retours, six lyres et petit écran LED.",
-          "son": "bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "bon",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 2550
         }
       ]
     },
@@ -2552,67 +2081,55 @@
       "id": "038",
       "nom": "Arto",
       "lieux": "Wavre",
-      "adresse": null,
-      "profil_simulation": "moyenne",
       "province": "Brabant wallon",
-      "categorie_taille": "moyenne",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 1.16
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 1620,
           "description": "Son de salle, quatre micros, éclairage de face et projection.",
-          "son": "normal",
-          "light": "normal",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "standard",
+          "prix_ttc": 950
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 3025,
           "description": "Son renforcé, éclairage d'ambiance et deux écrans.",
-          "son": "bien",
-          "light": "bien",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "bon",
+          "video": "standard",
+          "prix_ttc": 1300
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 5400,
           "description": "Son de scène, six retours, huit lyres et petit mur LED.",
-          "son": "trés bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 1650
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 9180,
           "description": "Son multizone, douze lyres et captation à deux caméras.",
-          "son": "trés bien",
-          "light": "trés bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "bon",
+          "prix_ttc": 2000
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 15120,
           "description": "Son étendu, seize lyres, mur LED et trois caméras.",
-          "son": "exelent",
-          "light": "trés bien",
-          "video": "trés bien",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2350
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 23760,
           "description": "Son multizone, vingt-quatre lyres, deux murs LED et quatre caméras.",
-          "son": "exelent",
-          "light": "exelent",
-          "video": "exelent",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2700
         }
       ]
     },
@@ -2620,67 +2137,55 @@
       "id": "039",
       "nom": "WNM Audiovisual Solutions",
       "lieux": "Seraing",
-      "adresse": null,
-      "profil_simulation": "petite",
       "province": "Liège",
-      "categorie_taille": "petite",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 0.79
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 200,
           "description": "Deux enceintes compactes ; sans lumière ni vidéo.",
-          "son": "simple",
-          "light": "null",
-          "video": "null",
-          "taille_montage": "trés petit"
+          "son": "basique",
+          "light": "absent",
+          "video": "absent",
+          "prix_ttc": 200
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 360,
           "description": "Deux enceintes et une barre LED.",
-          "son": "simple",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "basique",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 360
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 615,
           "description": "Deux enceintes, un caisson et quatre LED.",
-          "son": "normal",
-          "light": "simple",
-          "video": "null",
-          "taille_montage": "petit"
+          "son": "standard",
+          "light": "basique",
+          "video": "absent",
+          "prix_ttc": 615
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 1010,
           "description": "Son de salle, six LED et vidéoprojecteur.",
-          "son": "normal",
-          "light": "normal",
-          "video": "simple",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "basique",
+          "prix_ttc": 1010
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 1680,
           "description": "Son renforcé, deux retours, quatre lyres et projection.",
-          "son": "bien",
-          "light": "normal",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "standard",
+          "video": "standard",
+          "prix_ttc": 1680
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 2910,
           "description": "Son renforcé, quatre retours, six lyres et petit écran LED.",
-          "son": "bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "bon",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 2850
         }
       ]
     },
@@ -2688,67 +2193,55 @@
       "id": "040",
       "nom": "PWL - Painting with Light",
       "lieux": "Genk",
-      "adresse": null,
-      "profil_simulation": "moyenne",
       "province": "Limbourg",
-      "categorie_taille": "moyenne",
-      "deplacement": {
-        "prix_simule_eur_ht_km_par_vehicule": 1.22
-      },
       "kits": [
         {
           "id": 1,
-          "prix_estime_eur_ht": 1740,
           "description": "Son de salle, quatre micros, éclairage de face et projection.",
-          "son": "normal",
-          "light": "normal",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "standard",
+          "light": "standard",
+          "video": "standard",
+          "prix_ttc": 1250
         },
         {
           "id": 2,
-          "prix_estime_eur_ht": 3250,
           "description": "Son renforcé, éclairage d'ambiance et deux écrans.",
-          "son": "bien",
-          "light": "bien",
-          "video": "normal",
-          "taille_montage": "normal"
+          "son": "bon",
+          "light": "bon",
+          "video": "standard",
+          "prix_ttc": 1600
         },
         {
           "id": 3,
-          "prix_estime_eur_ht": 5800,
           "description": "Son de scène, six retours, huit lyres et petit mur LED.",
-          "son": "trés bien",
-          "light": "bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "bon",
+          "video": "bon",
+          "prix_ttc": 1950
         },
         {
           "id": 4,
-          "prix_estime_eur_ht": 9860,
           "description": "Son multizone, douze lyres et captation à deux caméras.",
-          "son": "trés bien",
-          "light": "trés bien",
-          "video": "bien",
-          "taille_montage": "grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "bon",
+          "prix_ttc": 2300
         },
         {
           "id": 5,
-          "prix_estime_eur_ht": 16240,
           "description": "Son étendu, seize lyres, mur LED et trois caméras.",
-          "son": "exelent",
-          "light": "trés bien",
-          "video": "trés bien",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 2650
         },
         {
           "id": 6,
-          "prix_estime_eur_ht": 25520,
           "description": "Son multizone, vingt-quatre lyres, deux murs LED et quatre caméras.",
-          "son": "exelent",
-          "light": "exelent",
-          "video": "exelent",
-          "taille_montage": "trés grand"
+          "son": "excellent",
+          "light": "excellent",
+          "video": "excellent",
+          "prix_ttc": 3000
         }
       ]
     }

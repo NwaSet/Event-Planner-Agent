@@ -257,14 +257,15 @@ def test_budget_change_calls_budgetary_then_invalidates_only_over_limit_offers(m
     assert run.costs()["allocations"] == {"venue": 1200, "catering": 2000, "provider": 800}
 
 
-def test_venue_replacement_rechecks_imposed_provider_and_keeps_date(monkeypatch):
+def test_venue_replacement_recenters_provider_and_keeps_date(monkeypatch):
     run = prepared_event(monkeypatch)
+    run.event_data["results"]["providers"] = [{"id": "005", "kit_id": 1}]
     old_provider = copy.deepcopy(run.event_data["results"]["providers"])
     assert old_provider[0]["id"] in ("005", "013")
     run.revise_event(replace=["venue"], remove=["catering"])
     assert run.event_data["results"]["providers"] == old_provider
     old_venue = next(row for row in run.catalogs["venue"] if row["id"] == "salle_010")
-    assert not run.services_available(old_venue)
+    assert not run.services_available(old_venue)  # salle explicitement remplacée
     _, _, _, decision = create_all_agents()
     monkeypatch.setattr(agent_module, "chat", lambda messages, **kwargs: first_choice(messages))
     result = run.delegate(decision, "Autre salle", "venue", requirements={"venue_filters": {"ids": ["salle_001"]}})
@@ -273,7 +274,7 @@ def test_venue_replacement_rechecks_imposed_provider_and_keeps_date(monkeypatch)
     assert run.event_data["results"]["planning"] == PLANNING
     assert run.event_data["results"]["providers"] == [] and run.event_data["tasks"]["provider"]["status"] == "invalidated"
     assert run.delegate(decision, "Prestataire autorisé par la nouvelle salle", "provider")["status"] == "success"
-    assert run.event_data["results"]["providers"][0]["id"] in ("002", "003")
+    assert run.event_data["results"]["providers"][0]["id"] != "005"
     assert any(item["result"] == old_provider for item in run.event_data["workflow"]["decision_archive"])
 
 
@@ -315,8 +316,8 @@ def test_new_schedule_invalidates_venue_with_earlier_music_deadline(monkeypatch)
     run.revise_event(replace=["planning"])
     _, _, planning, _ = create_all_agents()
     monkeypatch.setattr(agent_module, "chat", Mock(return_value=message(json.dumps(
-        {"start": "2026-12-26T20:00", "end": "2026-12-27T01:00"}))))
-    assert run.delegate(planning, "Fin à une heure", "planning")["status"] == "success"
+        {"start": "2026-12-26T20:00", "end": "2026-12-27T04:00"}))))
+    assert run.delegate(planning, "Fin à quatre heures", "planning")["status"] == "success"
     assert run.event_data["results"]["venue"] is None and run.event_data["tasks"]["venue"]["status"] == "invalidated"
 
 

@@ -142,6 +142,11 @@ Available tools:
 Rules:
 - Analyze the user's needs, preferences, budget, location, and constraints.
 - preferences is text (possibly a JSON-encoded object); these wishes never override mandatory constraints.
+- This is an academic simulation with entirely fictional catalogues. Compare several suitable candidates; never choose the first merely because it is first.
+- Soft wishes (outdoors if possible, preferred price range, preferred technical level) belong in preferences, not mandatory search filters. Use them to rank the compatible candidates.
+- For an explicitly required full meal, search with full_meal=true; never substitute an aperitif cocktail. A preferred buffet remains a preference unless required.
+- Technical levels share one scale: absent, basique, standard, bon, excellent. Excellent includes a very good sound system. Apply required sound, light and video levels to the same kit.
+- Prices have no logistics supplements: venue rental TTC, catering TTC per person, technical kit TTC, with no additional VAT calculation.
 - An explicitly requested student party requires event_type=soiree_etudiante. Never select a venue that forbids this event type.
 - A musical/electronic party or DJ set does not imply event_type=concert. Use concert only for an explicitly requested concert.
 - Use integer headcounts/limits, numeric budgets, true/false booleans and exact string IDs (preserving leading zeros).
@@ -156,7 +161,7 @@ Rules:
 - Prioritize the user's explicit requirements over general preferences.
 - Consider overall suitability rather than selecting only by price.
 - When weather is provided for the venue city and date, consider an indoor or covered option for cold, rain or wind, using catalogue equipment and space types.
-- Weather is a forecast, not a guarantee. It never overrides capacity, event prohibitions, budget, location, hours or other mandatory constraints. An unavailable observation supplies no forecast.
+- Weather is a forecast, not a guarantee. It never overrides capacity, event compatibility, budget, location, hours or other mandatory constraints. An unavailable observation supplies no forecast.
 - Use only information returned by the tool.
 - Never invent, modify, or assume missing database information.
 - Do not call unrelated tools or retrieve unnecessary data.
@@ -165,6 +170,7 @@ Rules:
 - location_search identifies the nearest commune with compatible offers, ranked by straight-line distance using Overpass. Preserve all non-location constraints and report the selected venue's actual commune. All subsequent service and weather searches use that commune, even if the initial request named another city.
 - For an impossible task return {"error": "specific conflict"}.
 - Consider included venue equipment; avoid redundant services unless requested.
+- Venues have one generic capacity, a list of equipment and no imposed suppliers or accessibility data. Do not invent PMR/accessibility guarantees or seated-capacity distinctions. All prices are TTC.
 - Dates and catalogue entries do not establish availability or confirmed reservations.
 - Do not perform tasks outside your selection role.
 

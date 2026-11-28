@@ -15,22 +15,19 @@ def test_complete_summary_displays_names_local_dates_and_constraints_without_jso
     assert "19/12/2026 à 20:00" in output and "20/12/2026 à 01:00 (heure locale)" in output
     assert all(run.selected_row(category)["nom"] in output for category in ("venue", "catering", "provider"))
     assert "Fin de la musique autorisée par la salle : 02:00" in output
-    assert "Traiteurs autorisés par la salle" in output and "Prestataires techniques autorisés par la salle" in output
-    assert next(row["nom"] for row in run.catalogs["catering"] if row["id"] == "traiteur_034") in output
-    assert next(row["nom"] for row in run.catalogs["provider"] if row["id"] == "003") in output
-    assert "2 425,00 EUR TTC" in output and "600,00 EUR, hors dépense" in output
-    assert "Coût total non confirmé" in output and "aucune réservation confirmée" in output
+    assert "Traiteurs autorisés par la salle" not in output and "Prestataires techniques autorisés par la salle" not in output
+    assert next(row["nom"] for row in run.catalogs["catering"] if row["id"] == "traiteur_034") not in output
+    assert next(row["nom"] for row in run.catalogs["provider"] if row["id"] == "003") not in output
+    assert "2 425,00 EUR TTC" in output and "tout compris" in output
+    assert "Coût TTC total : non déterminable" in output and "aucune réservation confirmée" in output
     assert all(internal not in output for internal in ("{", "}", "salle_001", "traiteur_001", "heure_fin_musique"))
 
 
-def test_missing_authorized_supplier_is_reported_without_inventing_a_name():
+def test_venue_summary_never_invents_supplier_restrictions():
     run = EventRun("Salle")
     run.record("venue", {"status": "success", "result": {"id": "salle_001"}})
-    venue = run.selected_row("venue")
-    venue["contraintes"]["prestataires_techniques_autorises_ids"] = ["inconnu"]
-    output = run.summary("")
-    assert "référence inconnu à vérifier" in output
-    assert "prestataires_techniques_autorises_ids" not in output
+    assert "contraintes" not in run.selected_row("venue")
+    assert "autorisé" not in run.summary("").replace("autorisée", "")
 
 
 def test_partial_summary_preserves_document_and_explains_pending_tasks():
